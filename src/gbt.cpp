@@ -12,6 +12,8 @@
 #include "utils.h"
 
 #include <array>
+#include <iostream>
+#include <iomanip>
 #include <thread>
 #include <chrono>
 
@@ -207,6 +209,100 @@ bool writeGBTRegLocal(localArgs *la, const uint32_t ohN, const uint32_t gbtN, co
     return false;
 } //End writeGBTRegLocal(...)
 
+void readGBTConfig(const RPCMsg *request, RPCMsg *response)
+{
+    GETLOCALARGS(response);
+
+    const uint32_t ohN  = request->get_word("ohN");
+    const uint32_t gbtN = request->get_word("gbtN");
+
+    // FIXME Is this properly initialized here?
+    gbt::config_t config{};
+
+    // Read the configuration
+    try {
+      readGBTConfigLocal(&la, ohN, gbtN, config);
+      response->set_binarydata("config", config.data(), config.size());
+      // FIXME could wrap this catch into the EMIT_RPC_ERROR function, or a STANDARD_CATCH
+    } catch (const std::range_error& e) {
+      response->set_string("error", e.what());
+    } catch (const std::runtime_error& e) {
+      response->set_string("error", e.what());
+    } catch (const std::exception& e) {
+      response->set_string("error", e.what());
+    }
+
+    rtxn.abort();
+}
+
+bool readGBTConfigLocal(localArgs *la, const uint32_t ohN, const uint32_t gbtN, gbt::config_t &config)
+{
+    LOGGER->log_message(LogManager::INFO, stdsprintf("Writing the configuration of OH #%u - GBTX #%u.", ohN, gbtN));
+
+    const uint32_t ohMax = readReg(la, "GEM_AMC.GEM_SYSTEM.CONFIG.NUM_OF_OH");
+    if (ohN >= ohMax) {
+        std::stringstream errmsg;
+        errmsg << "The ohN parameter supplied (" << ohN
+               << ") exceeds the number of OH's supported by the CTP7 ("
+               << ohMax << ").";
+        // EMIT_RPC_ERROR(la->response, errmsg.str(), true);
+        throw std::runtime_error(errmsg.str());
+    }
+
+    if (gbtN >= gbt::GBTS_PER_OH) {
+        std::stringstream errmsg;
+        errmsg << "The gbtN parameter supplied (" << gbtN
+               << ") exceeds the number of GBT's per OH ("
+               << gbt::GBTS_PER_OH << ").";
+        // EMIT_RPC_ERROR(la->response, errmsg.str(), true);
+        throw std::runtime_error(errmsg.str());
+    }
+
+    for (size_t address = 0; address < gbt::CONFIG_SIZE; address++) {
+        config[address] = readGBTRegLocal(la, ohN, gbtN, static_cast<uint16_t>(address));
+    }
+
+    return false;
+}
+
+uint8_t readGBTRegLocal(localArgs *la, const uint32_t ohN, const uint32_t gbtN, const uint16_t address)
+{
+    // Check that the GBT exists
+    if (gbtN >= gbt::GBTS_PER_OH) {
+        std::stringstream errmsg;
+        errmsg << "The gbtN parameter supplied (" << gbtN
+               << ") is larger than the number of GBT's per OH ("
+               << gbt::GBTS_PER_OH << ").";
+        // EMIT_RPC_ERROR(la->response, errmsg.str(), true);
+        throw std::runtime_error(errmsg.str());
+    }
+
+    // Check that the address exists
+    if (address >= gbt::CONFIG_SIZE) {
+        std::stringstream errmsg;
+        errmsg << "The GBT has 0x" << std::hex << std::setw(8) << std::setfill('0') << gbt::CONFIG_SIZE-1 << std::dec
+               << " writable addresses while the address provided is "
+               << std::hex << std::setw(8) << std::setfill('0') << address << std::dec;
+        // EMIT_RPC_ERROR(la->response, errmsg.str(), true);
+        throw std::runtime_error(errmsg.str());
+    }
+
+    // GBT registers are 8 bits long
+    writeReg(la, "GEM_AMC.SLOW_CONTROL.IC.READ_WRITE_LENGTH", 1);
+
+    // Select the link number
+    const uint32_t linkN = ohN*gbt::GBTS_PER_OH + gbtN;
+    writeReg(la, "GEM_AMC.SLOW_CONTROL.IC.GBTX_LINK_SELECT", linkN);
+
+    // Read the register
+    writeReg(la, "GEM_AMC.SLOW_CONTROL.IC.ADDRESS", address);
+    writeReg(la, "GEM_AMC.SLOW_CONTROL.IC.EXECUTE_READ", 1);
+    uint32_t value = readReg(la, "GEM_AMC.SLOW_CONTROL.IC.WRITE_DATA");
+
+    return value&0xff;
+}
+
+
 extern "C" {
     const char *module_version_key = "gbt v1.0.1";
     int module_activity_color = 4;
@@ -217,7 +313,8 @@ extern "C" {
             return; // Do not register our functions, we depend on memsvc.
         }
         modmgr->register_method("gbt", "writeGBTConfig", writeGBTConfig);
-        modmgr->register_method("gbt", "writeGBTPhase", writeGBTPhase);
-        modmgr->register_method("gbt", "scanGBTPhases", scanGBTPhases);
+        modmgr->register_method("gbt", "writeGBTPhase",  writeGBTPhase);
+        modmgr->register_method("gbt", "scanGBTPhases",  scanGBTPhases);
+        modmgr->register_method("gbt", "readGBTConfig",  readGBTConfig);
     }
 }
