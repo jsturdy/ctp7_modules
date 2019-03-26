@@ -144,7 +144,7 @@ calibration_routines: optohybrid vfat3 amc extras utils
 	$(eval export EXTRA_LINKS=$(^:%=-l:%.so))
 	$(MAKE) $(PackageLibraryDir)/calibration_routines.so EXTRA_LINKS="$(EXTRA_LINKS)"
 
-gbt: utils
+gbt: amc utils
 	$(eval export EXTRA_LINKS=$(^:%=-l:%.so))
 	$(MAKE) $(PackageLibraryDir)/gbt.so EXTRA_LINKS="$(EXTRA_LINKS)"
 

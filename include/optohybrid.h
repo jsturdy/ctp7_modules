@@ -221,4 +221,34 @@ void stopCalPulse2AllChannelsLocal(localArgs *la, uint32_t ohN, uint32_t mask, u
  */
 void stopCalPulse2AllChannels(const RPCMsg *request, RPCMsg *response);
 
+/*!
+ *  \brief Local callable version of readOptoHybridConfig
+ *  \param la Local arguments structure
+ *  \param ohN Optohybrid optical link number
+ *  \param config configuration to read from the OptoHybrid specified
+ */
+void readOptoHybridConfigLocal(localArgs *la, uint32_t const& ohN, uint32_t* config);
+
+/*!
+ *  \brief Disables calibration pulse in channels between chMin and chMax
+ *  \param request RPC response message
+ *  \param response RPC response message
+ */
+void readOptoHybridConfig(const RPCMsg *request, RPCMsg *response);
+
+/*!
+ *  \brief Local callable version of writeOptoHybridConfig
+ *  \param la Local arguments structure
+ *  \param ohN Optohybrid optical link number
+ *  \param config configuration to write to the OptoHybrid specified
+ */
+void writeOptoHybridConfigLocal(localArgs *la, uint32_t const& ohN, uint32_t* config);
+
+/*!
+ *  \brief Disables calibration pulse in channels between chMin and chMax
+ *  \param request RPC response message
+ *  \param response RPC response message
+ */
+void writeOptoHybridConfig(const RPCMsg *request, RPCMsg *response);
+
 #endif

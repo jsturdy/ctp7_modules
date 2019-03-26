@@ -6,14 +6,17 @@
  */
 
 #include "vfat3.h"
+
 #include <algorithm>
 #include <chrono>
-#include "optohybrid.h"
 #include <thread>
-#include "amc.h"
-#include "reedmuller.h"
 #include <iomanip>
 #include <memory>
+
+#include "amc.h"
+#include "optohybrid.h"
+#include "reedmuller.h"
+#include "hw_constants.h"
 
 uint32_t vfatSyncCheckLocal(localArgs * la, uint32_t ohN)
 {
@@ -621,6 +624,145 @@ void getVFAT3ChipIDs(const RPCMsg *request, RPCMsg *response)
   getVFAT3ChipIDsLocal(&la, ohN, vfatMask, rawID);
 
   rtxn.abort();
+}
+
+uint32_t readVFAT3ConfigLocal(localArgs * la, uint8_t const& ohN, uint8_t const& vfatN, uint32_t* config)
+{
+    // FIXME put these into HW constants?
+    std::stringstream base;
+    base << "GEM_AMC.OH.OH" << static_cast<int>(ohN) << ".GEB.VFAT" << static_cast<int>(vfatN)
+         << ".VFAT_CHANNELS.CHANNEL0";
+    uint32_t baseAddr = getAddress(la, base.str());
+
+    const size_t nChRegs  = 128;
+    const size_t nCfgRegs = 17+2;
+    const size_t cfg_sz = nChRegs + nCfgRegs;
+    // const std::string cfgregs [] = {
+    //   "CFG_0",
+    // };
+
+    uint16_t* vfatconfig = reinterpret_cast<uint16_t*>(config);
+
+    // FIXME registers and addresses, but what are stored in the DB are address table registers, not 32-bit registers
+    // std::string regName;
+
+    for (size_t reg = 0; reg < cfg_sz; ++reg) {
+        vfatconfig[reg] = 0xffff&readRawAddress(baseAddr+reg, la->response);
+    }
+
+    return 0x0;
+}
+
+void readVFAT3Config(const RPCMsg *request, RPCMsg *response)
+{
+    GETLOCALARGS(response);
+
+    const uint32_t ohN   = request->get_word("ohN");
+    const uint32_t vfatN = request->get_word("vfatN");
+
+    std::vector<uint32_t> config;
+    config.resize(vfat::VFAT_SINGLE_RAM_SIZE);
+    try {
+      readVFAT3ConfigLocal(&la, ohN, vfatN, config.data());
+      response->set_binarydata("config", config.data(), config.size());
+    } catch (const std::runtime_error& e) {
+      std::stringstream errmsg;
+      errmsg << "Error reading VFAT3 config: " << e.what();
+      LOGGER->log_message(LogManager::ERROR,errmsg.str());
+      response->set_string("error",errmsg.str());
+    }
+
+    rtxn.abort();
+}
+
+void writeVFAT3ConfigLocal(localArgs * la, uint8_t const& ohN, uint8_t const& vfatN, uint32_t* config)
+{
+    if (config == nullptr) {
+        std::stringstream errmsg;
+        errmsg << "The config data supplied is invalid!";
+        // EMIT_RPC_ERROR(la->response, errmsg.str(), true);
+        throw std::runtime_error(errmsg.str());
+    }
+
+    // ohN check
+    const uint32_t ohMax = readReg(la, "GEM_AMC.GEM_SYSTEM.CONFIG.NUM_OF_OH");
+    if (ohN >= ohMax) {
+        std::stringstream errmsg;
+        errmsg << "The ohN parameter supplied (" << ohN
+               << ") exceeds the number of OH's supported by the CTP7 ("
+               << ohMax << ").";
+        // EMIT_RPC_ERROR(la->response, errmsg.str(), true);
+        throw std::runtime_error(errmsg.str());
+    } else if (vfatN >= oh::VFATS_PER_OH) {
+        std::stringstream errmsg;
+        errmsg << "The vfatN parameter supplied (" << vfatN
+               << ") exceeds the number of VFAT's per OH ("
+               << oh::VFATS_PER_OH << ").";
+        // EMIT_RPC_ERROR(la->response, errmsg.str(), true);
+        throw std::runtime_error(errmsg.str());
+    }
+    
+    // FIXME put these into HW constants?
+    std::stringstream base;
+    base << "GEM_AMC.OH.OH" << static_cast<int>(ohN) << ".GEB.VFAT" << static_cast<int>(vfatN)
+         << ".VFAT_CHANNELS.CHANNEL0";
+    uint32_t baseAddr = getAddress(la, base.str());
+
+    const size_t nChRegs  = 128;
+    const size_t nCfgRegs = 17+2;
+    const size_t cfg_sz = nChRegs + nCfgRegs;
+    // const std::string cfgregs [] = {
+    //   "CFG_0",
+    // };
+
+    uint16_t* vfatconfig = reinterpret_cast<uint16_t*>(config);
+
+    // FIXME registers and addresses, but what are stored in the DB are address table registers, not 32-bit registers
+    // std::string regName;
+
+    for (size_t reg = 0; reg < cfg_sz; ++reg) {
+        writeRawAddress(baseAddr+reg, 0xffff&vfatconfig[reg], la->response);
+    }
+
+    return;
+}
+
+void writeVFAT3Config(const RPCMsg *request, RPCMsg *response)
+{
+    GETLOCALARGS(response);
+
+    const uint32_t ohN    = request->get_word("ohN");
+    const uint32_t vfatN  = request->get_word("vfatN");
+    const bool useBLASTER = request->get_word("useBLASTER");
+
+    std::vector<uint32_t> config;
+    if (!useBLASTER) {
+      // Must we check the size of the config?
+      uint32_t configSize = request->get_binarydata_size("config");
+      request->get_binarydata("config", config.data(), configSize);
+    } else {
+      config.resize(vfat::VFAT_SINGLE_RAM_SIZE);
+      try {
+        readVFAT3ConfigLocal(&la, ohN, vfatN, config.data());
+      } catch (const std::runtime_error& e) {
+        std::stringstream errmsg;
+        errmsg << "Error reading VFAT3 config: " << e.what();
+        LOGGER->log_message(LogManager::ERROR,errmsg.str());
+        response->set_string("error",errmsg.str());
+      }
+    }
+
+    try {
+      writeVFAT3ConfigLocal(&la, ohN, vfatN, config.data());
+      response->set_binarydata("config", config.data(), config.size());
+    } catch (const std::runtime_error& e) {
+      std::stringstream errmsg;
+      errmsg << "Error writing VFAT3 config: " << e.what();
+      LOGGER->log_message(LogManager::ERROR,errmsg.str());
+      response->set_string("error",errmsg.str());
+    }
+
+    rtxn.abort();
 }
 
 extern "C" {

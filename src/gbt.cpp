@@ -4,6 +4,7 @@
  */
 
 #include "gbt.h"
+#include "amc/blaster_ram.h"
 #include "hw_constants.h"
 #include "hw_constants_checks.h"
 
@@ -44,8 +45,14 @@ bool scanGBTPhasesLocal(localArgs *la, const uint32_t ohN, const uint32_t N, con
 
     // ohN check
     const uint32_t ohMax = readReg(la, "GEM_AMC.GEM_SYSTEM.CONFIG.NUM_OF_OH");
-    if (ohN >= ohMax)
-        EMIT_RPC_ERROR(la->response, stdsprintf("The ohN parameter supplied (%u) exceeds the number of OH's supported by the CTP7 (%u).", ohN, ohMax), true);
+    if (ohN >= ohMax) {
+        std::stringstream errmsg;
+        errmsg << "The ohN parameter supplied (" << ohN
+               << ") exceeds the number of OH's supported by the CTP7 ("
+               << ohMax << ").";
+        // EMIT_RPC_ERROR(la->response, errmsg.str(), true);
+        throw std::runtime_error(errmsg.str());
+    }
 
     // phaseMin check
     if (gbt::checkPhase(la->response, phaseMin))
@@ -100,22 +107,52 @@ void writeGBTConfig(const RPCMsg *request, RPCMsg *response)
     GETLOCALARGS(response);
 
     // Get the keys
-    const uint32_t ohN = request->get_word("ohN");
-    const uint32_t gbtN = request->get_word("gbtN");
+    const uint32_t ohN    = request->get_word("ohN");
+    const uint32_t gbtN   = request->get_word("gbtN");
+    const bool useBLASTER = request->get_word("useBLASTER");
 
-    // We must check the size of the config key
-    const uint32_t configSize = request->get_binarydata_size("config");
-    if (configSize != gbt::CONFIG_SIZE)
-        EMIT_RPC_ERROR(response, stdsprintf("The provided configuration has not the correct size. It is %u registers long while this methods expects %hu 8-bits registers.", configSize, gbt::CONFIG_SIZE), (void)"");
-
+    uint32_t configSize = 0x0;
     gbt::config_t config{};
-    request->get_binarydata("config", config.data(), config.size());
 
-    // Write the configuration
-    writeGBTConfigLocal(&la, ohN, gbtN, config);
+    if (!useBLASTER) {
+      // We must check the size of the config key
+      configSize = request->get_binarydata_size("config");
+      request->get_binarydata("config", config.data(), config.size());
+    } else {
+      // readGBTConfRAMLocal reads the RAM in 32-bit words
+      std::vector<uint32_t> gbtcfg;
+      gbtcfg.resize(gbt::GBT_SINGLE_RAM_SIZE*gbt::GBTS_PER_OH);
+      configSize = readGBTConfRAMLocal(&la, gbtcfg.data(), gbtcfg.size(), (0x1<<ohN));
 
+      // pick the correct GBT cfg out of the selected OptoHybrid
+      std::copy_n(reinterpret_cast<uint8_t*>(gbtcfg.data()+(gbtN*gbt::GBT_SINGLE_RAM_SIZE)),
+                  gbt::CONFIG_SIZE, config.begin());
+      configSize = config.size();
+    }
+
+    if (configSize != gbt::CONFIG_SIZE) {
+        std::stringstream errmsg;
+        errmsg << "The provided configuration does not have the correct size."
+               << " Config is " << configSize << " registers long while this methods expects "
+               << gbt::CONFIG_SIZE << " 8-bits registers.";
+        rtxn.abort();  // FIXME necessary?
+        EMIT_RPC_ERROR(la.response, errmsg.str(), (void)"");
+    }
+
+    try {
+      // Write the configuration
+      writeGBTConfigLocal(&la, ohN, gbtN, config);
+    } catch (const std::runtime_error& e) {
+        std::stringstream errmsg;
+        errmsg << e.what();
+        errmsg << "The provided configuration does not have the correct size."
+               << " Config is " << configSize << " registers long while this methods expects "
+               << gbt::CONFIG_SIZE << " 8-bits registers.";
+        rtxn.abort();  // FIXME necessary?
+        EMIT_RPC_ERROR(la.response, errmsg.str(), (void)"");
+    }
     rtxn.abort();
-} //End writeGBTConfig(...)
+}
 
 bool writeGBTConfigLocal(localArgs *la, const uint32_t ohN, const uint32_t gbtN, const gbt::config_t &config)
 {
@@ -123,12 +160,21 @@ bool writeGBTConfigLocal(localArgs *la, const uint32_t ohN, const uint32_t gbtN,
 
     // ohN check
     const uint32_t ohMax = readReg(la, "GEM_AMC.GEM_SYSTEM.CONFIG.NUM_OF_OH");
-    if (ohN >= ohMax)
-        EMIT_RPC_ERROR(la->response, stdsprintf("The ohN parameter supplied (%u) exceeds the number of OH's supported by the CTP7 (%u).", ohN, ohMax), true);
-
-    // gbtN check
-    if (gbtN >= gbt::GBTS_PER_OH)
-        EMIT_RPC_ERROR(la->response, stdsprintf("The gbtN parameter supplied (%u) exceeds the number of GBT's per OH (%u).", gbtN, gbt::GBTS_PER_OH), true);
+    if (ohN >= ohMax) {
+        std::stringstream errmsg;
+        errmsg << "The ohN parameter supplied (" << ohN
+               << ") exceeds the number of OH's supported by the CTP7 ("
+               << ohMax << ").";
+        // EMIT_RPC_ERROR(la->response, errmsg.str(), true);
+        throw std::runtime_error(errmsg.str());
+    } else if (gbtN >= gbt::GBTS_PER_OH) {
+        std::stringstream errmsg;
+        errmsg << "The gbtN parameter supplied (" << gbtN
+               << ") exceeds the number of GBT's per OH ("
+               << gbt::GBTS_PER_OH << ").";
+        // EMIT_RPC_ERROR(la->response, errmsg.str(), true);
+        throw std::runtime_error(errmsg.str());
+    }
 
     // Write all the registers
     for (size_t address = 0; address < gbt::CONFIG_SIZE; address++) {
@@ -149,7 +195,14 @@ void writeGBTPhase(const RPCMsg *request, RPCMsg *response)
     const uint8_t phase = request->get_word("phase");
 
     // Write the phase
-    writeGBTPhaseLocal(&la, ohN, vfatN, phase);
+    try {
+      writeGBTPhaseLocal(&la, ohN, vfatN, phase);
+    } catch (const std::runtime_error& e) {
+      std::stringstream errmsg;
+      errmsg << e.what();
+      rtxn.abort();  // FIXME necessary?
+      EMIT_RPC_ERROR(la.response, errmsg.str(), (void)"");
+    }
 
     rtxn.abort();
 } //End writeGBTPhase
@@ -160,12 +213,26 @@ bool writeGBTPhaseLocal(localArgs *la, const uint32_t ohN, const uint32_t vfatN,
 
     // ohN check
     const uint32_t ohMax = readReg(la, "GEM_AMC.GEM_SYSTEM.CONFIG.NUM_OF_OH");
-    if (ohN >= ohMax)
-        EMIT_RPC_ERROR(la->response, stdsprintf("The ohN parameter supplied (%u) exceeds the number of OH's supported by the CTP7 (%u).", ohN, ohMax), true);
+    if (ohN >= ohMax) {
+        std::stringstream errmsg;
+        errmsg << "The ohN parameter supplied (" << ohN
+               << ") exceeds the number of OH's supported by the CTP7 ("
+               << ohMax << ").";
+        LOGGER->log_message(LogManager::ERROR, errmsg.str());
+        // EMIT_RPC_ERROR(la->response, errmsg.str(), true);
+        throw std::runtime_error(errmsg.str());
+    }
 
     // vfatN check
-    if (vfatN >= oh::VFATS_PER_OH)
-        EMIT_RPC_ERROR(la->response, stdsprintf("The vfatN parameter supplied (%u) exceeds the number of VFAT's per OH (%u).", vfatN, oh::VFATS_PER_OH), true);
+    if (vfatN >= oh::VFATS_PER_OH) {
+        std::stringstream errmsg;
+        errmsg << "The vfatN parameter supplied (" << vfatN
+               << ") exceeds the number of VFAT's per OH ("
+               << oh::VFATS_PER_OH << ").";
+        LOGGER->log_message(LogManager::ERROR, errmsg.str());
+        // EMIT_RPC_ERROR(la->response, errmsg.str(), true);
+        throw std::runtime_error(errmsg.str());
+    }
 
     // phase check
     if (gbt::checkPhase(la->response, phase))
@@ -187,8 +254,14 @@ bool writeGBTPhaseLocal(localArgs *la, const uint32_t ohN, const uint32_t vfatN,
 bool writeGBTRegLocal(localArgs *la, const uint32_t ohN, const uint32_t gbtN, const uint16_t address, const uint8_t value)
 {
     // Check that the GBT exists
-    if (gbtN >= gbt::GBTS_PER_OH)
-        EMIT_RPC_ERROR(la->response, stdsprintf("The gbtN parameter supplied (%u) is larger than the number of GBT's per OH (%u).", gbtN, gbt::GBTS_PER_OH), true);
+    if (gbtN >= gbt::GBTS_PER_OH) {
+        std::stringstream errmsg;
+        errmsg << "The gbtN parameter supplied (" << gbtN
+               << ") exceeds the number of GBT's per OH ("
+               << gbt::GBTS_PER_OH << ").";
+        // EMIT_RPC_ERROR(la->response, errmsg.str(), true);
+        throw std::runtime_error(errmsg.str());
+    }
 
     // Check that the address is writable
     if (address >= gbt::CONFIG_SIZE)
@@ -223,8 +296,8 @@ void readGBTConfig(const RPCMsg *request, RPCMsg *response)
     try {
       readGBTConfigLocal(&la, ohN, gbtN, config);
       response->set_binarydata("config", config.data(), config.size());
-      // FIXME could wrap this catch into the EMIT_RPC_ERROR function, or a STANDARD_CATCH
     } catch (const std::range_error& e) {
+      // FIXME could wrap this catch into the EMIT_RPC_ERROR function, or a STANDARD_CATCH
       response->set_string("error", e.what());
     } catch (const std::runtime_error& e) {
       response->set_string("error", e.what());
@@ -247,9 +320,7 @@ bool readGBTConfigLocal(localArgs *la, const uint32_t ohN, const uint32_t gbtN, 
                << ohMax << ").";
         // EMIT_RPC_ERROR(la->response, errmsg.str(), true);
         throw std::runtime_error(errmsg.str());
-    }
-
-    if (gbtN >= gbt::GBTS_PER_OH) {
+    } else if (gbtN >= gbt::GBTS_PER_OH) {
         std::stringstream errmsg;
         errmsg << "The gbtN parameter supplied (" << gbtN
                << ") exceeds the number of GBT's per OH ("

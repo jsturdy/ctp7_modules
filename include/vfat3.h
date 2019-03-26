@@ -167,4 +167,20 @@ uint16_t decodeChipID(uint32_t encChipID);
 void getVFAT3ChipIDsLocal(localArgs * la, uint32_t ohN, uint32_t vfatMask=0xFF000000, bool rawID=false);
 void getVFAT3ChipIDs(const RPCMsg *request, RPCMsg *response);
 
+/*! \fn void statusVFAT3s(const RPCMsg *request, RPCMsg *response)
+ *  \brief Returns list of values of the most important VFAT3 register
+ *  \param request RPC request message
+ *  \param response RPC responce message
+ */
+uint32_t readVFAT3ConfigLocal(localArgs * la, uint8_t const& ohN, uint8_t const& vfatN, uint32_t* config=nullptr);
+void readVFAT3Config(const RPCMsg *request, RPCMsg *response);
+
+/*! \fn void statusVFAT3s(const RPCMsg *request, RPCMsg *response)
+ *  \brief Returns list of values of the most important VFAT3 register
+ *  \param request RPC request message
+ *  \param response RPC responce message
+ */
+void writeVFAT3ConfigLocal(localArgs * la, uint8_t const& ohN, uint8_t const& vfatN, uint32_t* config=nullptr);
+void writeVFAT3Config(const RPCMsg *request, RPCMsg *response);
+
 #endif
