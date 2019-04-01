@@ -54,17 +54,17 @@ void broadcastReadLocal(localArgs * la, uint32_t *outData, uint32_t ohN, std::st
  */
 void broadcastRead(const RPCMsg *request, RPCMsg *response);
 
-/*! \fn configureScanModuleLocal(localArgs * la, uint32_t ohN, uint32_t vfatN, uint32_t scanmode, bool useUltra, uint32_t mask, uint32_t ch, uint32_t nevts, uint32_t dacMin, uint32_t dacMax, uint32_t dacStep)
+/*!
  *  \brief Local callable version of configureScanModule
  *
-     *     Configure the firmware scan controller
-     *      mode: 0 Threshold scan
-     *            1 Threshold scan per channel
-     *            2 Latency scan
-     *            3 s-curve scan
-     *            4 Threshold scan with tracking data
-     *      vfat: for single VFAT scan, specify the VFAT number
-     *            for ULTRA scan, specify the VFAT mask
+ *     Configure the firmware scan controller
+ *      mode: 0 Threshold scan
+ *            1 Threshold scan per channel
+ *            2 Latency scan
+ *            3 s-curve scan
+ *            4 Threshold scan with tracking data
+ *      vfat: for single VFAT scan, specify the VFAT number
+ *            for ULTRA scan, specify the VFAT mask
  *
  *  \param la Local arguments structure
  *  \param ohN Optohybrid optical link number
@@ -221,7 +221,7 @@ void stopCalPulse2AllChannelsLocal(localArgs *la, uint32_t ohN, uint32_t mask, u
  */
 void stopCalPulse2AllChannels(const RPCMsg *request, RPCMsg *response);
 
-/*!
+/*! FIXME INCOMPLETE
  *  \brief Local callable version of readOptoHybridConfig
  *  \param la Local arguments structure
  *  \param ohN Optohybrid optical link number
@@ -229,14 +229,14 @@ void stopCalPulse2AllChannels(const RPCMsg *request, RPCMsg *response);
  */
 size_t readOptoHybridConfigLocal(localArgs *la, uint32_t const& ohN, uint32_t* config);
 
-/*!
- *  \brief Disables calibration pulse in channels between chMin and chMax
+/*! FIXME INCOMPLETE
+ *  \brief RPC callback to read OptoHybrid configuration
  *  \param request RPC response message
  *  \param response RPC response message
  */
 void readOptoHybridConfig(const RPCMsg *request, RPCMsg *response);
 
-/*!
+/*! FIXME INCOMPLETE
  *  \brief Local callable version of writeOptoHybridConfig
  *  \param la Local arguments structure
  *  \param ohN Optohybrid optical link number
@@ -244,8 +244,8 @@ void readOptoHybridConfig(const RPCMsg *request, RPCMsg *response);
  */
 void writeOptoHybridConfigLocal(localArgs *la, uint32_t const& ohN, uint32_t* config);
 
-/*!
- *  \brief Disables calibration pulse in channels between chMin and chMax
+/*! FIXME INCOMPLETE
+ *  \brief RPC callback to write OptoHybrid configuration
  *  \param request RPC response message
  *  \param response RPC response message
  */
