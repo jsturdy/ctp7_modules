@@ -637,14 +637,8 @@ uint32_t readVFAT3ConfigLocal(localArgs * la, uint8_t const& ohN, uint8_t const&
     const size_t nChRegs  = 128;
     const size_t nCfgRegs = 17+2;
     const size_t cfg_sz = nChRegs + nCfgRegs;
-    // const std::string cfgregs [] = {
-    //   "CFG_0",
-    // };
 
     uint16_t* vfatconfig = reinterpret_cast<uint16_t*>(config);
-
-    // FIXME registers and addresses, but what are stored in the DB are address table registers, not 32-bit registers
-    // std::string regName;
 
     for (size_t reg = 0; reg < cfg_sz; ++reg) {
         vfatconfig[reg] = 0xffff&readRawAddress(baseAddr+reg, la->response);
@@ -668,8 +662,8 @@ void readVFAT3Config(const RPCMsg *request, RPCMsg *response)
     } catch (const std::runtime_error& e) {
       std::stringstream errmsg;
       errmsg << "Error reading VFAT3 config: " << e.what();
-      LOGGER->log_message(LogManager::ERROR,errmsg.str());
-      response->set_string("error",errmsg.str());
+      rtxn.abort();  // FIXME necessary?
+      EMIT_RPC_ERROR(la.response, errmsg.str(), (void)"");
     }
 
     rtxn.abort();
@@ -680,28 +674,24 @@ void writeVFAT3ConfigLocal(localArgs * la, uint8_t const& ohN, uint8_t const& vf
     if (config == nullptr) {
         std::stringstream errmsg;
         errmsg << "The config data supplied is invalid!";
-        // EMIT_RPC_ERROR(la->response, errmsg.str(), true);
         throw std::runtime_error(errmsg.str());
     }
 
-    // ohN check
     const uint32_t ohMax = readReg(la, "GEM_AMC.GEM_SYSTEM.CONFIG.NUM_OF_OH");
     if (ohN >= ohMax) {
         std::stringstream errmsg;
         errmsg << "The ohN parameter supplied (" << ohN
                << ") exceeds the number of OH's supported by the CTP7 ("
                << ohMax << ").";
-        // EMIT_RPC_ERROR(la->response, errmsg.str(), true);
         throw std::runtime_error(errmsg.str());
     } else if (vfatN >= oh::VFATS_PER_OH) {
         std::stringstream errmsg;
         errmsg << "The vfatN parameter supplied (" << vfatN
                << ") exceeds the number of VFAT's per OH ("
                << oh::VFATS_PER_OH << ").";
-        // EMIT_RPC_ERROR(la->response, errmsg.str(), true);
         throw std::runtime_error(errmsg.str());
     }
-    
+
     // FIXME put these into HW constants?
     std::stringstream base;
     base << "GEM_AMC.OH.OH" << static_cast<int>(ohN) << ".GEB.VFAT" << static_cast<int>(vfatN)
@@ -711,14 +701,8 @@ void writeVFAT3ConfigLocal(localArgs * la, uint8_t const& ohN, uint8_t const& vf
     const size_t nChRegs  = 128;
     const size_t nCfgRegs = 17+2;
     const size_t cfg_sz = nChRegs + nCfgRegs;
-    // const std::string cfgregs [] = {
-    //   "CFG_0",
-    // };
 
     uint16_t* vfatconfig = reinterpret_cast<uint16_t*>(config);
-
-    // FIXME registers and addresses, but what are stored in the DB are address table registers, not 32-bit registers
-    // std::string regName;
 
     for (size_t reg = 0; reg < cfg_sz; ++reg) {
         writeRawAddress(baseAddr+reg, 0xffff&vfatconfig[reg], la->response);
@@ -737,7 +721,6 @@ void writeVFAT3Config(const RPCMsg *request, RPCMsg *response)
 
     std::vector<uint32_t> config;
     if (!useBLASTER) {
-      // Must we check the size of the config?
       uint32_t configSize = request->get_binarydata_size("config");
       request->get_binarydata("config", config.data(), configSize);
     } else {
@@ -747,8 +730,8 @@ void writeVFAT3Config(const RPCMsg *request, RPCMsg *response)
       } catch (const std::runtime_error& e) {
         std::stringstream errmsg;
         errmsg << "Error reading VFAT3 config: " << e.what();
-        LOGGER->log_message(LogManager::ERROR,errmsg.str());
-        response->set_string("error",errmsg.str());
+        rtxn.abort();  // FIXME necessary?
+        EMIT_RPC_ERROR(la.response, errmsg.str(), (void)"");
       }
     }
 
@@ -758,8 +741,8 @@ void writeVFAT3Config(const RPCMsg *request, RPCMsg *response)
     } catch (const std::runtime_error& e) {
       std::stringstream errmsg;
       errmsg << "Error writing VFAT3 config: " << e.what();
-      LOGGER->log_message(LogManager::ERROR,errmsg.str());
-      response->set_string("error",errmsg.str());
+      rtxn.abort();  // FIXME necessary?
+      EMIT_RPC_ERROR(la.response, errmsg.str(), (void)"");
     }
 
     rtxn.abort();
@@ -770,19 +753,24 @@ extern "C" {
     int module_activity_color = 4;
     void module_init(ModuleManager *modmgr) {
         if (memhub_open(&memsvc) != 0) {
-            LOGGER->log_message(LogManager::ERROR, stdsprintf("Unable to connect to memory service: %s", memsvc_get_last_error(memsvc)));
+            std::stringstream errmsg;
+            errmsg << "Unable to connect to memory service: "
+                   << memsvc_get_last_error(memsvc);
+            LOGGER->log_message(LogManager::ERROR, errmsg.str());
             LOGGER->log_message(LogManager::ERROR, "Unable to load module");
             return; // Do not register our functions, we depend on memsvc.
         }
-        modmgr->register_method("vfat3", "configureVFAT3s", configureVFAT3s);
-        modmgr->register_method("vfat3", "configureVFAT3DacMonitor", configureVFAT3DacMonitor);
+        modmgr->register_method("vfat3", "configureVFAT3s",                   configureVFAT3s);
+        modmgr->register_method("vfat3", "configureVFAT3DacMonitor",          configureVFAT3DacMonitor);
         modmgr->register_method("vfat3", "configureVFAT3DacMonitorMultiLink", configureVFAT3DacMonitorMultiLink);
-        modmgr->register_method("vfat3", "getChannelRegistersVFAT3", getChannelRegistersVFAT3);
-        modmgr->register_method("vfat3", "getVFAT3ChipIDs", getVFAT3ChipIDs);
-        modmgr->register_method("vfat3", "readVFAT3ADC", readVFAT3ADC);
-        modmgr->register_method("vfat3", "readVFAT3ADCMultiLink", readVFAT3ADCMultiLink);
-        modmgr->register_method("vfat3", "setChannelRegistersVFAT3", setChannelRegistersVFAT3);
-        modmgr->register_method("vfat3", "statusVFAT3s", statusVFAT3s);
-        modmgr->register_method("vfat3", "vfatSyncCheck", vfatSyncCheck);
+        modmgr->register_method("vfat3", "getChannelRegistersVFAT3",          getChannelRegistersVFAT3);
+        modmgr->register_method("vfat3", "readVFAT3ADC",                      readVFAT3ADC);
+        modmgr->register_method("vfat3", "readVFAT3ADCMultiLink",             readVFAT3ADCMultiLink);
+        modmgr->register_method("vfat3", "setChannelRegistersVFAT3",          setChannelRegistersVFAT3);
+        modmgr->register_method("vfat3", "statusVFAT3s",                      statusVFAT3s);
+        modmgr->register_method("vfat3", "vfatSyncCheck",                     vfatSyncCheck);
+        modmgr->register_method("vfat3", "getVFAT3ChipIDs",                   getVFAT3ChipIDs);
+        modmgr->register_method("vfat3", "readVFAT3Config",                   readVFAT3Config);
+        modmgr->register_method("vfat3", "writeVFAT3Config",                  writeVFAT3Config);
     }
 }

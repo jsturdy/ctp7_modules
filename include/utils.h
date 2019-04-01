@@ -70,15 +70,21 @@ std::vector<std::string> split(const std::string &s, char delim);
 
 std::string serialize(xhal::utils::Node n);
 
-/*! \brief This macro is used to terminate a function if an error occurs. It logs the message, write it to the `error` RPC key and returns the `error_code` value.
+/*!
+ *  \brief This macro is used to terminate a function if an error occurs.
+ *
+ *   It logs the message, write it to the `error` RPC key (FIXME REMOVE? and returns the `error_code` value.)
+ *   This method should only be called from an RPC callback
+ *
  *  \param response A pointer to the RPC response object.
  *  \param message The `std::string` error message.
- *  \param error_code Value which is passed to the `return` statement.
+ *  \param error_code Value which is passed to the `return` statement. (FIXME REMOVE?)
  */
 #define EMIT_RPC_ERROR(response, message, error_code) { \
     LOGGER->log_message(LogManager::ERROR, message);    \
     response->set_string("error", message);             \
     return error_code; }
+    /* rtxn.abort(); } */
 
 /*! \fn uint32_t getNumNonzeroBits(uint32_t value)
  *  \brief returns the number of nonzero bits in an integer
