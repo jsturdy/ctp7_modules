@@ -227,7 +227,7 @@ void stopCalPulse2AllChannels(const RPCMsg *request, RPCMsg *response);
  *  \param ohN Optohybrid optical link number
  *  \param config configuration to read from the OptoHybrid specified
  */
-void readOptoHybridConfigLocal(localArgs *la, uint32_t const& ohN, uint32_t* config);
+size_t readOptoHybridConfigLocal(localArgs *la, uint32_t const& ohN, uint32_t* config);
 
 /*!
  *  \brief Disables calibration pulse in channels between chMin and chMax
