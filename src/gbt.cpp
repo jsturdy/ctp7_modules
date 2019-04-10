@@ -68,7 +68,7 @@ bool scanGBTPhasesLocal(localArgs *la, const uint32_t ohN, const uint32_t N, con
     // Perform the scan
     for (uint8_t phase = phaseMin; phase <= phaseMax; phase += phaseStep) {
         // Set the new phases
-        for (uint32_t vfatN = 0; vfatN < oh::VFATS_PER_OH; vfatN++) {
+        for (uint32_t vfatN = 0; vfatN < oh::VFATS_PER_OH; ++vfatN) {
             if (writeGBTPhaseLocal(la, ohN, vfatN, phase))
                 return true;
         }
@@ -76,13 +76,13 @@ bool scanGBTPhasesLocal(localArgs *la, const uint32_t ohN, const uint32_t N, con
         // Wait for the phases to be set
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
 
-        for (uint32_t repN = 0; repN < N; repN++) {
+        for (uint32_t repN = 0; repN < N; ++repN) {
             // Try to synchronize the VFAT's
             writeReg(la, "GEM_AMC.GEM_SYSTEM.CTRL.LINK_RESET", 1);
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
 
             // Check the VFAT status
-            for (uint32_t vfatN = 0; vfatN < oh::VFATS_PER_OH; vfatN++) {
+            for (uint32_t vfatN = 0; vfatN < oh::VFATS_PER_OH; ++vfatN) {
                 const bool linkGood = (readReg(la, stdsprintf("GEM_AMC.OH_LINKS.OH%hu.VFAT%hu.LINK_GOOD", ohN, vfatN)) == 1);
                 const bool syncErrCnt = (readReg(la, stdsprintf("GEM_AMC.OH_LINKS.OH%hu.VFAT%hu.SYNC_ERR_CNT", ohN, vfatN)) == 0);
                 const bool cfgRun = (readReg(la, stdsprintf("GEM_AMC.OH.OH%hu.GEB.VFAT%hu.CFG_RUN", ohN, vfatN)) != 0xdeaddead);
@@ -95,7 +95,7 @@ bool scanGBTPhasesLocal(localArgs *la, const uint32_t ohN, const uint32_t N, con
     }
 
     // Write the results to RPC keys
-    for (uint32_t vfatN = 0; vfatN < oh::VFATS_PER_OH; vfatN++) {
+    for (uint32_t vfatN = 0; vfatN < oh::VFATS_PER_OH; ++vfatN) {
         la->response->set_word_array(stdsprintf("OH%u.VFAT%u", ohN, vfatN), results[vfatN]);
     }
 
@@ -106,14 +106,14 @@ void writeGBTConfig(const RPCMsg *request, RPCMsg *response)
 {
     GETLOCALARGS(response);
 
-    const uint32_t ohN    = request->get_word("ohN");
-    const uint32_t gbtN   = request->get_word("gbtN");
-    const bool useBLASTER = request->get_word("useBLASTER");
+    const uint32_t ohN  = request->get_word("ohN");
+    const uint32_t gbtN = request->get_word("gbtN");
+    const bool useRAM   = request->get_word("useRAM");
 
     uint32_t configSize = 0x0;
     gbt::config_t config{};
 
-    if (!useBLASTER) {
+    if (!useRAM) {
       configSize = request->get_binarydata_size("config");
       request->get_binarydata("config", config.data(), config.size());
     } else {
@@ -121,7 +121,7 @@ void writeGBTConfig(const RPCMsg *request, RPCMsg *response)
       gbtcfg.resize(gbt::GBT_SINGLE_RAM_SIZE*gbt::GBTS_PER_OH);
       configSize = readGBTConfRAMLocal(&la, gbtcfg.data(), gbtcfg.size(), (0x1<<ohN));
 
-      // pick the correct GBT cfg out of the selected OptoHybrid
+      // pick the correct GBT cfg out of the blob
       std::copy_n(reinterpret_cast<uint8_t*>(gbtcfg.data()+(gbtN*gbt::GBT_SINGLE_RAM_SIZE)),
                   gbt::CONFIG_SIZE, config.begin());
       configSize = config.size();
@@ -166,12 +166,83 @@ bool writeGBTConfigLocal(localArgs *la, const uint32_t ohN, const uint32_t gbtN,
         throw std::runtime_error(errmsg.str());
     }
 
-    for (size_t address = 0; address < gbt::CONFIG_SIZE; address++) {
+    for (size_t address = 0; address < gbt::CONFIG_SIZE; ++address) {
         if (writeGBTRegLocal(la, ohN, gbtN, static_cast<uint16_t>(address), config[address]))
             return true;
     }
 
     return false;
+}
+
+void writeAllGBTConfigs(const RPCMsg *request, RPCMsg *response)
+{
+    GETLOCALARGS(response);
+
+    const uint32_t ohN = request->get_word("ohN");
+    const bool useRAM  = request->get_word("useRAM");
+
+    uint32_t configSize = 0x0;
+    std::array<gbt::config_t, gbt::GBTS_PER_OH> gbtcfg{};
+    std::vector<uint32_t> config;
+
+    // Extract the configuration of the GBTx chips, can anything in here throw?
+    if (!useRAM) { // use passed config values
+      if (request->get_key_exists("config")) { // FIXME one complete blob?
+        configSize = request->get_binarydata_size("config");
+        config.resize(configSize);
+        request->get_binarydata("config", config.data(), config.size());
+
+        size_t gbtidx = 0;
+        for (auto& cfg : gbtcfg) {
+          std::copy_n(reinterpret_cast<uint8_t*>(config.data()+(gbtidx*gbt::GBT_SINGLE_RAM_SIZE)),
+                      gbt::CONFIG_SIZE, cfg.begin());
+          configSize += cfg.size(); // FIXME not if we do 3 lines before?
+        }
+      } else { // FIXME three separate blobs?
+        size_t gbtidx = 0;
+        for (auto& cfg : gbtcfg) {
+          std::stringstream cfgName;
+          cfgName << "gbt" << gbtidx; // FIXME throws if key doesn't exist?
+          configSize += request->get_binarydata_size(cfgName.str());
+          request->get_binarydata(cfgName.str(), cfg.data(), cfg.size());
+        }
+      }
+    } else { // use BLASTER values
+      config.resize(gbt::GBT_SINGLE_RAM_SIZE*gbt::GBTS_PER_OH);
+      // FIXME this might throw
+      configSize = readGBTConfRAMLocal(&la, config.data(), config.size(), (0x1<<ohN));
+
+      size_t gbtidx = 0;
+      for (auto& cfg : gbtcfg) {
+        std::copy_n(reinterpret_cast<uint8_t*>(config.data()+(gbtidx*gbt::GBT_SINGLE_RAM_SIZE)),
+                    gbt::CONFIG_SIZE, cfg.begin());
+        configSize += cfg.size(); // FIXME not if we do 3 lines before
+      }
+    }
+
+    // Write the configuration to the GBTx chips
+    size_t gbtidx = 0;
+    for (auto const& cfg : gbtcfg) {
+      configSize = cfg.size();
+      if (configSize != gbt::CONFIG_SIZE) {
+        std::stringstream errmsg;
+        errmsg << "The provided configuration does not have the correct size."
+               << " Config is " << configSize << " registers long while this methods expects "
+               << gbt::CONFIG_SIZE << " 8-bits registers.";
+        rtxn.abort();  // FIXME necessary?
+        EMIT_RPC_ERROR(la.response, errmsg.str(), (void)"");
+      }
+
+      try {
+        writeGBTConfigLocal(&la, ohN, gbtidx, cfg);
+      } catch (const std::runtime_error& e) {
+        std::stringstream errmsg;
+        errmsg << e.what();
+        rtxn.abort();  // FIXME necessary?
+        EMIT_RPC_ERROR(la.response, errmsg.str(), (void)"");
+      }
+    }
+    rtxn.abort();
 }
 
 void writeGBTPhase(const RPCMsg *request, RPCMsg *response)
@@ -230,7 +301,7 @@ bool writeGBTPhaseLocal(localArgs *la, const uint32_t ohN, const uint32_t vfatN,
     // Write the triplicated phase registers
     const uint32_t gbtN = gbt::elinkMappings::VFAT_TO_GBT[vfatN];
 
-    for (unsigned char regN = 0; regN < 3; regN++) {
+    for (uint8_t regN = 0; regN < gbt::REGISTERS_PER_ELINK; ++regN) { // FIXME what is this looping?
         const uint16_t regAddress = gbt::elinkMappings::ELINK_TO_REGISTERS[gbt::elinkMappings::VFAT_TO_ELINK[vfatN]][regN];
 
         if (writeGBTRegLocal(la, ohN, gbtN, regAddress, phase))
@@ -238,11 +309,10 @@ bool writeGBTPhaseLocal(localArgs *la, const uint32_t ohN, const uint32_t vfatN,
     }
 
     return false;
-} //End writeGBTPhaseLocal
+}
 
 bool writeGBTRegLocal(localArgs *la, const uint32_t ohN, const uint32_t gbtN, const uint16_t address, const uint8_t value)
 {
-    // Check that the GBT exists
     if (gbtN >= gbt::GBTS_PER_OH) {
         std::stringstream errmsg;
         errmsg << "The gbtN parameter supplied (" << gbtN
@@ -250,16 +320,19 @@ bool writeGBTRegLocal(localArgs *la, const uint32_t ohN, const uint32_t gbtN, co
                << gbt::GBTS_PER_OH << ").";
         // EMIT_RPC_ERROR(la->response, errmsg.str(), true);
         throw std::runtime_error(errmsg.str());
+    } else if (address >= gbt::CONFIG_SIZE) {
+        std::stringstream errmsg;
+        errmsg << "GBT has " << std::hex << std::setw(8) << std::setfill('0') << gbt::CONFIG_SIZE
+               << " writable addresses while the provided address is "
+               << std::hex << std::setw(8) << std::setfill('0') << address << std::dec
+               << ".";
+        // EMIT_RPC_ERROR(la->response, errmsg.str(), true);
+        throw std::runtime_error(errmsg.str());
     }
-
-    // Check that the address is writable
-    if (address >= gbt::CONFIG_SIZE)
-        EMIT_RPC_ERROR(la->response, stdsprintf("GBT has %hu writable addresses while the provided address is %hu.", gbt::CONFIG_SIZE-1, address), true);
 
     // GBT registers are 8 bits long
     writeReg(la, "GEM_AMC.SLOW_CONTROL.IC.READ_WRITE_LENGTH", 1);
 
-    // Select the link number
     const uint32_t linkN = ohN*gbt::GBTS_PER_OH + gbtN;
     writeReg(la, "GEM_AMC.SLOW_CONTROL.IC.GBTX_LINK_SELECT", linkN);
 
@@ -269,7 +342,30 @@ bool writeGBTRegLocal(localArgs *la, const uint32_t ohN, const uint32_t gbtN, co
     writeReg(la, "GEM_AMC.SLOW_CONTROL.IC.EXECUTE_WRITE", 1);
 
     return false;
-} //End writeGBTRegLocal(...)
+}
+
+void writeGBTReg(const RPCMsg *request, RPCMsg *response)
+{
+    GETLOCALARGS(response);
+
+    // Get the keys
+    const uint32_t ohN   = request->get_word("ohN");
+    const uint32_t gbtN  = request->get_word("gbtN");
+    const uint16_t addr  = request->get_word("addr");
+    const uint16_t value = request->get_word("value");
+
+    // Read the phase
+    try {
+      writeGBTRegLocal(&la, ohN, gbtN, addr, value);
+    } catch (const std::runtime_error& e) {
+      std::stringstream errmsg;
+      errmsg << e.what();
+      rtxn.abort();  // FIXME necessary?
+      EMIT_RPC_ERROR(la.response, errmsg.str(), (void)"");
+    }
+
+    rtxn.abort();
+}
 
 void readGBTConfig(const RPCMsg *request, RPCMsg *response)
 {
@@ -318,7 +414,7 @@ bool readGBTConfigLocal(localArgs *la, const uint32_t ohN, const uint32_t gbtN, 
         throw std::runtime_error(errmsg.str());
     }
 
-    for (size_t address = 0; address < gbt::CONFIG_SIZE; address++) {
+    for (size_t address = 0; address < gbt::CONFIG_SIZE; ++address) {
         config[address] = readGBTRegLocal(la, ohN, gbtN, static_cast<uint16_t>(address));
     }
 
@@ -327,7 +423,6 @@ bool readGBTConfigLocal(localArgs *la, const uint32_t ohN, const uint32_t gbtN, 
 
 uint8_t readGBTRegLocal(localArgs *la, const uint32_t ohN, const uint32_t gbtN, const uint16_t address)
 {
-    // Check that the GBT exists
     if (gbtN >= gbt::GBTS_PER_OH) {
         std::stringstream errmsg;
         errmsg << "The gbtN parameter supplied (" << gbtN
@@ -335,10 +430,7 @@ uint8_t readGBTRegLocal(localArgs *la, const uint32_t ohN, const uint32_t gbtN, 
                << gbt::GBTS_PER_OH << ").";
         // EMIT_RPC_ERROR(la->response, errmsg.str(), true);
         throw std::runtime_error(errmsg.str());
-    }
-
-    // Check that the address exists
-    if (address >= gbt::CONFIG_SIZE) {
+    } else if (address >= gbt::CONFIG_SIZE) {
         std::stringstream errmsg;
         errmsg << "The GBT has 0x" << std::hex << std::setw(8) << std::setfill('0') << gbt::CONFIG_SIZE-1 << std::dec
                << " writable addresses while the address provided is "
@@ -350,16 +442,35 @@ uint8_t readGBTRegLocal(localArgs *la, const uint32_t ohN, const uint32_t gbtN, 
     // GBT registers are 8 bits long
     writeReg(la, "GEM_AMC.SLOW_CONTROL.IC.READ_WRITE_LENGTH", 1);
 
-    // Select the link number
     const uint32_t linkN = ohN*gbt::GBTS_PER_OH + gbtN;
     writeReg(la, "GEM_AMC.SLOW_CONTROL.IC.GBTX_LINK_SELECT", linkN);
 
-    // Read the register
     writeReg(la, "GEM_AMC.SLOW_CONTROL.IC.ADDRESS", address);
     writeReg(la, "GEM_AMC.SLOW_CONTROL.IC.EXECUTE_READ", 1);
     uint32_t value = readReg(la, "GEM_AMC.SLOW_CONTROL.IC.WRITE_DATA");
 
     return value&0xff;
+}
+
+void readGBTReg(const RPCMsg *request, RPCMsg *response)
+{
+    GETLOCALARGS(response);
+
+    const uint32_t ohN   = request->get_word("ohN");
+    const uint32_t gbtN  = request->get_word("gbtN");
+    const uint16_t addr  = request->get_word("addr");
+
+    try {
+      // value = readGBTRegLocal(&la, ohN, gbtN, addr);
+      response->set_word("value", readGBTRegLocal(&la, ohN, gbtN, addr));
+    } catch (const std::runtime_error& e) {
+      std::stringstream errmsg;
+      errmsg << e.what();
+      rtxn.abort();  // FIXME necessary?
+      EMIT_RPC_ERROR(la.response, errmsg.str(), (void)"");
+    }
+
+    rtxn.abort();
 }
 
 
@@ -376,5 +487,7 @@ extern "C" {
         modmgr->register_method("gbt", "writeGBTPhase",  writeGBTPhase);
         modmgr->register_method("gbt", "scanGBTPhases",  scanGBTPhases);
         modmgr->register_method("gbt", "readGBTConfig",  readGBTConfig);
+        modmgr->register_method("gbt", "writeGBTReg",    writeGBTReg);
+        modmgr->register_method("gbt", "readGBTReg",     readGBTReg);
     }
 }
