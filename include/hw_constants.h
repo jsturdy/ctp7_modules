@@ -38,11 +38,24 @@ namespace oh {
     using namespace GEM_VARIANT;
 }
 
-/*! \brief This namespace hold the constants related to the OptoHybrid.
+/*!
+  \brief This namespace hold the constants related to the OptoHybrid.
  */
 namespace vfat {
-    /*! \brief GE1/1 specific namespace.
+    /*!
+      \brief GE1/1 specific namespace.
      */
+    constexpr uint16_t CH_CFG_SIZE  = 128; ///< Size of the VFAT channel configuration address space (consecutive 16-bit registers)
+    constexpr uint16_t GLB_CFG_SIZE = 17+2; ///< Size of the VFAT global configuration address space (consecutive 16-bit registers)
+    constexpr uint16_t CFG_SIZE = CH_CFG_SIZE+GLB_CFG_SIZE; ///< Size of the VFAT configuration address space (consecutive 16-bit registers)
+    // FIXME extra 2 registers above
+
+    typedef std::array<uint16_t, CFG_SIZE> config_t; ///< This type defines a VFAT configuration blob.
+
+    constexpr uint8_t CH_MIN = 0;   ///< Minimum channel number
+    constexpr uint8_t CH_MAX = 128; ///< Maximum channel number 127?128?129
+    constexpr uint8_t CHANNELS_PER_VFAT = 128; ///< Total number of channels on a VFAT
+
     namespace ge11 {
         constexpr size_t VFAT_SINGLE_RAM_SIZE = 74; ///< Per-VFAT RAM size: for GE1/1 24 VFATs per OH, 74 32-bit words of configuration per VFAT (147 16-bit VFAT configurations -> 32-bit words + padding)
     }
@@ -50,7 +63,8 @@ namespace vfat {
     using namespace GEM_VARIANT;
 }
 
-/*! \brief This namespace hold the constants related to the GBT.
+/*!
+  \brief This namespace hold the constants related to the GBT.
  */
 namespace gbt {
 
@@ -61,9 +75,10 @@ namespace gbt {
     constexpr uint8_t PHASE_MIN = 0;  ///< Minimal phase for the elink RX GBT phase.
     constexpr uint8_t PHASE_MAX = 15; ///< Maximal phase for the elink RX GBT phase.
 
-    /*! \brief GE1/1 specific namespace.
+    /*!
+      \brief GE1/1 specific namespace.
      */
-    namespace ge11{
+    namespace ge11 {
         constexpr uint32_t GBTS_PER_OH       = 3;  ///< The number of GBT's per OptoHybrid (should be part of the oh namespace, as VFATS_PER_OH)
         constexpr size_t GBT_SINGLE_RAM_SIZE = 92; ///< Per-GBT RAM size: for GE1/1 3 GBTx per OH, 92 32-bit words of configuration per GBT (366 8-bit GBT configurations -> 32-bit words + padding)
     }
