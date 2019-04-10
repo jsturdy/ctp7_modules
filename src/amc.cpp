@@ -8,6 +8,7 @@
 #include "amc.h"
 #include "amc/ttc.h"
 #include "amc/daq.h"
+#include "amc/sca.h"
 #include "amc/blaster_ram.h"
 
 #include <chrono>
@@ -219,7 +220,7 @@ extern "C" {
             return; // Do not register our functions, we depend on memsvc.
         }
 
-        modmgr->register_method("amc", "getOHVFATMask",          getOHVFATMask);
+        modmgr->register_method("amc", "getOHVFATMask",          getOHVFATMask); // FIXME belongs in optohybrid
         modmgr->register_method("amc", "getOHVFATMaskMultiLink", getOHVFATMaskMultiLink);
         modmgr->register_method("amc", "sbitReadOut",            sbitReadOut);
 
@@ -259,6 +260,8 @@ extern "C" {
 
         // SCA module methods (from amc/sca)
         // modmgr->register_method("amc", "scaHardResetEnable", scaHardResetEnable);
+        modmgr->register_method("amc", "readSCAChipID",     readSCAChipID);
+        modmgr->register_method("amc", "readSCASEUCounter", readSCASEUCounter);
 
         // BLASTER RAM module methods (from amc/blaster_ram)
         modmgr->register_method("amc", "writeConfRAM", writeConfRAM);

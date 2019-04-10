@@ -47,7 +47,7 @@ bool confCalPulseLocal(localArgs *la, uint32_t ohN, uint32_t mask, uint32_t ch, 
         return false;
     } //End Case: Bad Config, asked for OR of all channels
     else if (ch == 128 && toggleOn == false) { //Case: Turn cal pusle off for all channels
-        for (int vfatN = 0; vfatN < 24; vfatN++) { //Loop over all VFATs
+        for (int vfatN = 0; vfatN < 24; ++vfatN) { //Loop over all VFATs
             if ((notmask >> vfatN) & 0x1) { //End VFAT is not masked
                 for (int chan=0; chan < 128; ++chan) { //Loop Over all Channels
                     sprintf(regBuf,"GEM_AMC.OH.OH%i.GEB.VFAT%i.VFAT_CHANNELS.CHANNEL%i.CALPULSE_ENABLE", ohN, vfatN, chan);
@@ -58,7 +58,7 @@ bool confCalPulseLocal(localArgs *la, uint32_t ohN, uint32_t mask, uint32_t ch, 
         } //End Loop over all VFATs
     } //End Case: Turn cal pulse off for all channels
     else{ //Case: Pulse a specific channel
-        for (int vfatN = 0; vfatN < 24; vfatN++) { //Loop over all VFATs
+        for (int vfatN = 0; vfatN < 24; ++vfatN) { //Loop over all VFATs
             if ((notmask >> vfatN) & 0x1) { //End VFAT is not masked
                 sprintf(regBuf,"GEM_AMC.OH.OH%i.GEB.VFAT%i.VFAT_CHANNELS.CHANNEL%i.CALPULSE_ENABLE", ohN, vfatN, ch);
                 if (toggleOn == true) { //Case: turn calpulse on
@@ -300,7 +300,7 @@ void genScanLocal(localArgs *la, uint32_t *outData, uint32_t ohN, uint32_t mask,
             //Get addresses
             uint32_t daqMonAddr[24];
             uint32_t l1CntAddr = getAddress(la, "GEM_AMC.TTC.CMD_COUNTERS.L1A");
-            for (int vfatN = 0; vfatN < 24; vfatN++)
+            for (int vfatN = 0; vfatN < 24; ++vfatN)
             {
                 sprintf(regBuf,"GEM_AMC.GEM_TESTS.VFAT_DAQ_MONITOR.VFAT%i.GOOD_EVENTS_COUNT",vfatN);
                 daqMonAddr[vfatN] = getAddress(la, regBuf);
@@ -323,7 +323,7 @@ void genScanLocal(localArgs *la, uint32_t *outData, uint32_t ohN, uint32_t mask,
             for (uint32_t dacVal = dacMin; dacVal <= dacMax; dacVal += dacStep)
             {
                 //Write the scan reg value
-                for (int vfatN = 0; vfatN < 24; vfatN++) if ((notmask >> vfatN) & 0x1)
+                for (int vfatN = 0; vfatN < 24; ++vfatN) if ((notmask >> vfatN) & 0x1)
                 {
                     writeReg(la, stdsprintf("GEM_AMC.OH.OH%i.GEB.VFAT%i.CFG_%s",ohN,vfatN,scanReg.c_str()), dacVal);
                 }
@@ -359,7 +359,7 @@ void genScanLocal(localArgs *la, uint32_t *outData, uint32_t ohN, uint32_t mask,
                 writeReg(la, "GEM_AMC.GEM_TESTS.VFAT_DAQ_MONITOR.CTRL.ENABLE", 0x0);
 
                 //Read the DAQ Monitor counters
-                for (int vfatN = 0; vfatN < 24; vfatN++) {
+                for (int vfatN = 0; vfatN < 24; ++vfatN) {
                     if ( !( (notmask >> vfatN) & 0x1)) continue;
 
                     int idx = vfatN*(dacMax-dacMin+1)/dacStep+(dacVal-dacMin)/dacStep;
@@ -1324,7 +1324,7 @@ void genChannelScan(const RPCMsg *request, RPCMsg *response)
     }
 
     uint32_t outData[128*24*(dacMax-dacMin+1)/dacStep];
-    for (uint32_t ch = 0; ch < 128; ch++) {
+    for (uint32_t ch = 0; ch < 128; ++ch) {
         genScanLocal(&la, &(outData[ch*24*(dacMax-dacMin+1)/dacStep]), ohN, mask, ch, useCalPulse, currentPulse, calScaleFactor, nevts, dacMin, dacMax, dacStep, scanReg, useUltra, useExtTrig);
     }
     response->set_word_array("data",outData,24*128*(dacMax-dacMin+1)/dacStep);
