@@ -6,7 +6,6 @@
  */
 
 #include "vfat3.h"
-#include "amc/blaster_ram.h"
 
 #include <algorithm>
 #include <chrono>
@@ -15,10 +14,14 @@
 #include <memory>
 
 #include "amc.h"
+#include "amc/blaster_ram.h"
 #include "optohybrid.h"
+
+#include "hw_constants.h"
+
 #include "reedmuller.h"
 
-uint32_t vfatSyncCheckLocal(localArgs * la, uint32_t ohN)
+uint32_t vfatSyncCheckLocal(localArgs *la, uint32_t ohN)
 {
     uint32_t goodVFATs = 0;
     for (uint8_t vfatN = 0; vfatN < oh::VFATS_PER_OH; ++vfatN) {
@@ -126,7 +129,7 @@ void configureVFAT3DacMonitorMultiLink(const RPCMsg *request, RPCMsg *response)
     rtxn.abort();
 }
 
-void configureVFAT3sLocal(localArgs * la, uint32_t ohN, uint32_t vfatMask, uint32_t* config)
+void configureVFAT3sLocal(localArgs *la, uint32_t ohN, uint32_t vfatMask, uint32_t *config)
 {
     uint32_t goodVFATs = vfatSyncCheckLocal(la, ohN);
     uint32_t notmask = ~vfatMask & 0xFFFFFF;
@@ -198,7 +201,7 @@ void configureVFAT3s(const RPCMsg *request, RPCMsg *response)
 {
     GETLOCALARGS(response);
 
-    uint32_t ohN = request->get_word("ohN");
+    const uint32_t ohN = request->get_word("ohN");
     bool useRAM  = false;
     if (request->get_key_exists("useRAM"))
       useRAM = request->get_word("useRAM");
@@ -208,8 +211,8 @@ void configureVFAT3s(const RPCMsg *request, RPCMsg *response)
     vfat::config_t config{};
 
     if (!useRAM) {
-      // if (request->get_key_exists("vfatMask"))
-      vfatMask = request->get_word("vfatMask");
+      if (request->get_key_exists("vfatMask"))
+        vfatMask = request->get_word("vfatMask");
       configureVFAT3sLocal(&la, ohN, vfatMask);
     } else {
       std::vector<uint32_t> vfatcfg;
@@ -292,7 +295,7 @@ void getChannelRegistersVFAT3Local(localArgs *la, uint32_t ohN, uint32_t vfatMas
     return;
 }
 
-void readVFAT3ADCLocal(localArgs * la, uint32_t * outData, uint32_t ohN, bool useExtRefADC, uint32_t mask)
+void readVFAT3ADCLocal(localArgs *la, uint32_t * outData, uint32_t ohN, bool useExtRefADC, uint32_t mask)
 {
     if (useExtRefADC) { //Case: Use ADC with external reference
         broadcastReadLocal(la, outData, ohN, "ADC1_UPDATE", mask);
@@ -369,7 +372,7 @@ void readVFAT3ADCMultiLink(const RPCMsg *request, RPCMsg *response)
     rtxn.abort();
 }
 
-void setChannelRegistersVFAT3SimpleLocal(localArgs * la, uint32_t ohN, uint32_t vfatMask, uint32_t *chanRegData)
+void setChannelRegistersVFAT3SimpleLocal(localArgs *la, uint32_t ohN, uint32_t vfatMask, uint32_t *chanRegData)
 {
     //Determine the inverse of the vfatmask
     uint32_t notmask = ~vfatMask & 0xFFFFFF;
@@ -404,7 +407,7 @@ void setChannelRegistersVFAT3SimpleLocal(localArgs * la, uint32_t ohN, uint32_t 
     return;
 }
 
-void setChannelRegistersVFAT3Local(localArgs * la, uint32_t ohN, uint32_t vfatMask, uint32_t *calEnable, uint32_t *masks, uint32_t *trimARM, uint32_t *trimARMPol, uint32_t *trimZCC, uint32_t *trimZCCPol)
+void setChannelRegistersVFAT3Local(localArgs *la, uint32_t ohN, uint32_t vfatMask, uint32_t *calEnable, uint32_t *masks, uint32_t *trimARM, uint32_t *trimARMPol, uint32_t *trimZCC, uint32_t *trimZCCPol)
 {
     //Determine the inverse of the vfatmask
     uint32_t notmask = ~vfatMask & 0xFFFFFF;
@@ -505,7 +508,7 @@ void setChannelRegistersVFAT3(const RPCMsg *request, RPCMsg *response)
     rtxn.abort();
 } //End setChannelRegistersVFAT3()
 
-void statusVFAT3sLocal(localArgs * la, uint32_t ohN)
+void statusVFAT3sLocal(localArgs *la, uint32_t ohN)
 {
     std::string regs [] = {"CFG_PULSE_STRETCH ",
                            "CFG_SYNC_LEVEL_MODE",
@@ -629,18 +632,19 @@ uint16_t decodeChipID(uint32_t encChipID)
   }
 }
 
-void getVFAT3ChipIDsLocal(localArgs * la, uint32_t ohN, uint32_t* chipIDs, uint32_t vfatMask, bool rawID)
+void getVFAT3ChipIDsLocal(localArgs *la, uint32_t ohN, uint32_t *chipIDs, uint32_t vfatMask, bool rawID)
 {
   uint32_t goodVFATs = vfatSyncCheckLocal(la, ohN);
   uint32_t notmask = ~vfatMask & 0xFFFFFF;
-  if ((notmask & goodVFATs) != notmask) { // FIXME, standard check+message?
-      errmsg << "One of the unmasked VFATs is not Sync'd."
-             << "\tgoodVFATs: 0x" << std::hex << std::setw(8) << std::setfill('0') << goodVFATs
-             << "\tnotmask: 0x"   << std::hex << std::setw(8) << std::setfill('0') << notmask << std::dec;
-      throw std::runtime_error(errmsg.str());
-      la->response->set_string("error", errmsg.str());
-      return;
-  }
+  // if ((notmask & goodVFATs) != notmask) { // FIXME, standard check+message?
+  //     std::stringstream errmsg;
+  //     errmsg << "One of the unmasked VFATs is not Sync'd."
+  //            << "\tgoodVFATs: 0x" << std::hex << std::setw(8) << std::setfill('0') << goodVFATs
+  //            << "\tnotmask: 0x"   << std::hex << std::setw(8) << std::setfill('0') << notmask << std::dec;
+  //     throw std::runtime_error(errmsg.str());
+  //     la->response->set_string("error", errmsg.str());
+  //     return;
+  // }
 
   for (uint8_t vfatN = 0; vfatN < oh::VFATS_PER_OH; ++vfatN) {
     std::stringstream regBase;
@@ -648,9 +652,9 @@ void getVFAT3ChipIDsLocal(localArgs * la, uint32_t ohN, uint32_t* chipIDs, uint3
             << ".GEB.VFAT"     << static_cast<uint32_t>(vfatN)
             << ".HW_CHIP_ID";
 
-    if (!((notmask >> vfatN) & 0x1)) {
+    if (!(((goodVFATs&notmask) >> vfatN) & 0x1)) {
         chipIDs[vfatN] = 0xdeaddead;
-        la->response->set_word(regName,0xdeaddead);
+        la->response->set_word(regBase.str(), 0xdeaddead);
         continue;
     }
 
@@ -660,10 +664,10 @@ void getVFAT3ChipIDsLocal(localArgs * la, uint32_t ohN, uint32_t* chipIDs, uint3
     try {
       decChipID = decodeChipID(id);
       std::stringstream msg;
-      msg << "OH" << ohN << "::VFAT" << vfatN << ": chipID is:"
-          << std::hex<<std::setw(8)<<std::setfill('0')<<id<<std::dec
-          <<"(raw) or "
-          << std::hex<<std::setw(8)<<std::setfill('0')<<decChipID<<std::dec
+      msg << "OH" << ohN << "::VFAT" << static_cast<int>(vfatN) << ": chipID is: 0x"
+          << std::hex << std::setw(8) << std::setfill('0') << id << std::dec
+          <<"(raw) or 0x"
+          << std::hex << std::setw(4) << std::setfill('0') << decChipID << std::dec
           << "(decoded)";
       LOGGER->log_message(LogManager::INFO, msg.str());
 
@@ -691,36 +695,44 @@ void getVFAT3ChipIDs(const RPCMsg *request, RPCMsg *response)
   // struct localArgs la = getLocalArgs(response);
   GETLOCALARGS(response);
 
-  uint32_t ohN      = request->get_word("ohN");
-  uint32_t vfatMask = request->get_word("vfatMask");
-  bool rawID        = request->get_word("rawID");
+  uint32_t ohN = request->get_word("ohN");
+
+  uint32_t vfatMask = 0x0;
+  if (request->get_key_exists("vfatMask"))
+    vfatMask = request->get_word("vfatMask");
+
+  bool rawID = false;
+  if (request->get_key_exists("rawID"))
+    rawID = request->get_word("rawID");
+
   LOGGER->log_message(LogManager::DEBUG, "Reading VFAT3 chipIDs");
 
   std::vector<uint32_t> chipIDs;
   chipIDs.resize(oh::VFATS_PER_OH);
-  getVFAT3ChipIDsLocal(&la, ohN, chipIDs.data(), vfatMask, rawID);
-
+  try {
+    getVFAT3ChipIDsLocal(&la, ohN, chipIDs.data(), vfatMask, rawID);
+  } catch (const std::runtime_error& e) {
+    std::stringstream errmsg;
+    errmsg << "Error reading VFAT3 config: " << e.what();
+    rtxn.abort();  // FIXME necessary?
+    EMIT_RPC_ERROR(la.response, errmsg.str(), (void)"");
+  }
   response->set_word_array("chipIDs", chipIDs.data(), chipIDs.size());
   rtxn.abort();
 }
 
-uint32_t readVFAT3ConfigLocal(localArgs * la, uint8_t const& ohN, uint8_t const& vfatN, uint32_t* config)
+uint32_t readVFAT3ConfigLocal(localArgs *la, uint8_t const& ohN, uint8_t const& vfatN, uint32_t *config)
 {
-    // FIXME put these into HW constants?
     std::stringstream base;
     base << "GEM_AMC.OH.OH" << static_cast<uint32_t>(ohN)
          << ".GEB.VFAT"     << static_cast<uint32_t>(vfatN)
-         << ".VFAT_CHANNELS.CHANNEL0";
-    uint32_t baseAddr = getAddress(la, base.str());
-
-    const size_t nChRegs  = vfat::CH_CFG_SIZE;
-    const size_t nCfgRegs = vfat::GLB_CFG_SIZE;
-    const size_t cfg_sz = nChRegs + nCfgRegs;
+         << ".VFAT_CHANNELS";
+    uint32_t baseaddr = getAddress(la, base.str());
 
     uint16_t* vfatconfig = reinterpret_cast<uint16_t*>(config);
 
-    for (size_t reg = 0; reg < cfg_sz; ++reg) {
-        vfatconfig[reg] = 0xffff&readRawAddress(baseAddr+reg, la->response);
+    for (size_t reg = 0; reg < vfat::CFG_SIZE; ++reg) {
+        vfatconfig[reg] = 0xffff&readRawAddress(baseaddr+reg, la->response);
     }
 
     return 0x0;
@@ -748,8 +760,8 @@ void readVFAT3Config(const RPCMsg *request, RPCMsg *response)
     rtxn.abort();
 }
 
-// void writeVFAT3ConfigLocal(localArgs * la, uint8_t const& ohN, uint8_t const& vfatN, vfat::config_t const& config)
-void writeVFAT3ConfigLocal(localArgs * la, uint8_t const& ohN, uint8_t const& vfatN, uint32_t* config)
+// void writeVFAT3ConfigLocal(localArgs *la, uint8_t const& ohN, uint8_t const& vfatN, vfat::config_t const& config)
+void writeVFAT3ConfigLocal(localArgs *la, uint8_t const& ohN, uint8_t const& vfatN, uint32_t *config)
 {
     if (config == nullptr) {
         std::stringstream errmsg;
@@ -775,16 +787,12 @@ void writeVFAT3ConfigLocal(localArgs * la, uint8_t const& ohN, uint8_t const& vf
     std::stringstream base;
     base << "GEM_AMC.OH.OH" << static_cast<uint32_t>(ohN)
          << ".GEB.VFAT"     << static_cast<uint32_t>(vfatN)
-         << ".VFAT_CHANNELS.CHANNEL0";
+         << ".VFAT_CHANNELS";
     uint32_t baseAddr = getAddress(la, base.str());
-
-    const size_t nChRegs  = vfat::CH_CFG_SIZE;
-    const size_t nCfgRegs = vfat::GLB_CFG_SIZE;
-    const size_t cfg_sz = nChRegs + nCfgRegs;
 
     uint16_t* vfatconfig = reinterpret_cast<uint16_t*>(config);
 
-    for (size_t reg = 0; reg < cfg_sz; ++reg) {
+    for (size_t reg = 0; reg < vfat::CFG_SIZE; ++reg) {
         writeRawAddress(baseAddr+reg, 0xffff&vfatconfig[reg], la->response);
     }
 
@@ -795,29 +803,29 @@ void writeVFAT3Config(const RPCMsg *request, RPCMsg *response)
 {
     GETLOCALARGS(response);
 
-    const uint32_t ohN    = request->get_word("ohN");
-    const uint32_t vfatN  = request->get_word("vfatN");
-    const bool useBLASTER = request->get_word("useBLASTER");
+    const uint32_t ohN   = request->get_word("ohN");
+    const uint32_t vfatN = request->get_word("vfatN");
+    const bool useRAM    = request->get_word("useRAM");
 
     std::vector<uint32_t> config;
-    if (!useBLASTER) {
-      uint32_t configSize = request->get_binarydata_size("config");
-      request->get_binarydata("config", config.data(), configSize);
-    } else {
-      config.resize(vfat::VFAT_SINGLE_RAM_SIZE);
-      try {
+    try {
+      if (!useRAM) {
+        uint32_t cfg_sz = request->get_binarydata_size("config");
+        config.resize(cfg_sz);
+        request->get_binarydata("config", config.data(), cfg_sz);
+      } else {
+        config.resize(vfat::VFAT_SINGLE_RAM_SIZE);
         readVFAT3ConfigLocal(&la, ohN, vfatN, config.data());
-      } catch (const std::runtime_error& e) {
-        std::stringstream errmsg;
-        errmsg << "Error reading VFAT3 config: " << e.what();
-        rtxn.abort();  // FIXME necessary?
-        EMIT_RPC_ERROR(la.response, errmsg.str(), (void)"");
       }
+    } catch (const std::runtime_error& e) {
+      std::stringstream errmsg;
+      errmsg << "Error reading VFAT3 config: " << e.what();
+      rtxn.abort();  // FIXME necessary?
+      EMIT_RPC_ERROR(la.response, errmsg.str(), (void)"");
     }
 
     try {
       writeVFAT3ConfigLocal(&la, ohN, vfatN, config.data());
-      // response->set_binarydata("config", config.data(), config.size());
     } catch (const std::runtime_error& e) {
       std::stringstream errmsg;
       errmsg << "Error writing VFAT3 config: " << e.what();
@@ -829,7 +837,7 @@ void writeVFAT3Config(const RPCMsg *request, RPCMsg *response)
 }
 
 /** MIGRATED FROM optohybrid.so **/
-void broadcastWriteLocal(localArgs * la, uint32_t ohN, std::string regName, uint32_t value, uint32_t mask)
+void broadcastWriteLocal(localArgs *la, uint32_t ohN, std::string regName, uint32_t value, uint32_t mask)
 {
   uint32_t fw_maj = readReg(la, "GEM_AMC.GEM_SYSTEM.RELEASE.MAJOR");
   if (fw_maj == 1) {
@@ -838,16 +846,16 @@ void broadcastWriteLocal(localArgs * la, uint32_t ohN, std::string regName, uint
 
     std::string t_regName;
 
-    //Reset broadcast module
+    // Reset broadcast module
     t_regName = std::string(regBase) + ".Reset";
     writeRawReg(la, t_regName, 0);
-    //Set broadcast mask
+    // Set broadcast mask
     t_regName = std::string(regBase) + ".Mask";
     writeRawReg(la, t_regName, mask);
-    //Issue broadcast write request
+    // Issue broadcast write request
     t_regName = std::string(regBase) + ".Request." + regName;
     writeRawReg(la, t_regName, value);
-    //Wait until broadcast write finishes
+    // Wait until broadcast write finishes
     t_regName = std::string(regBase) + ".Running";
     while (uint32_t t_res = readRawReg(la, t_regName)) {
       if (t_res == 0xdeaddead) break;
@@ -874,14 +882,14 @@ void broadcastWrite(const RPCMsg *request, RPCMsg *response)
 
   std::string regName = request->get_string("reg_name");
   uint32_t value = request->get_word("value");
-  uint32_t mask = request->get_key_exists("mask")?request->get_word("mask"):0xFF000000;
-  uint32_t ohN = request->get_word("ohN");
+  uint32_t mask  = request->get_key_exists("mask")?request->get_word("mask"):0xFF000000;
+  uint32_t ohN   = request->get_word("ohN");
 
   broadcastWriteLocal(&la, ohN, regName, value, mask);
   rtxn.abort();
 }
 
-void broadcastReadLocal(localArgs * la, uint32_t * outData, uint32_t ohN, std::string regName, uint32_t mask)
+void broadcastReadLocal(localArgs *la, uint32_t * outData, uint32_t ohN, std::string regName, uint32_t mask)
 {
   uint32_t fw_maj = readReg(la, "GEM_AMC.GEM_SYSTEM.RELEASE.MAJOR");
   char regBase [100];
@@ -911,7 +919,7 @@ void broadcastRead(const RPCMsg *request, RPCMsg *response)
 
   std::string regName = request->get_string("reg_name");
   uint32_t mask = request->get_key_exists("mask")?request->get_word("mask"):0xFF000000;
-  uint32_t ohN = request->get_word("ohN");
+  uint32_t ohN  = request->get_word("ohN");
 
   uint32_t outData[oh::VFATS_PER_OH];
   broadcastReadLocal(&la, outData, ohN, regName, mask);
@@ -921,14 +929,15 @@ void broadcastRead(const RPCMsg *request, RPCMsg *response)
 }
 
 // Set default values to VFAT parameters. VFATs will remain in sleep mode
-void biasAllVFATsLocal(localArgs * la, uint32_t ohN, uint32_t mask)
+// FIXME VFAT2 OBSOLETE
+void biasAllVFATsLocal(localArgs *la, uint32_t ohN, uint32_t mask)
 {
   for (auto const& it : vfat_parameters) {
     broadcastWriteLocal(la, ohN, it.first, it.second, mask);
   }
 }
 
-void setAllVFATsToRunModeLocal(localArgs * la, uint32_t ohN, uint32_t mask)
+void setAllVFATsToRunModeLocal(localArgs *la, uint32_t ohN, uint32_t mask)
 {
     switch(fw_version_check("setAllVFATsToRunMode", la)) {
         case 3:
@@ -945,7 +954,7 @@ void setAllVFATsToRunModeLocal(localArgs * la, uint32_t ohN, uint32_t mask)
     return;
 }
 
-void setAllVFATsToSleepModeLocal(localArgs * la, uint32_t ohN, uint32_t mask)
+void setAllVFATsToSleepModeLocal(localArgs *la, uint32_t ohN, uint32_t mask)
 {
     switch(fw_version_check("setAllVFATsToRunMode", la)) {
         case 3:
@@ -962,7 +971,7 @@ void setAllVFATsToSleepModeLocal(localArgs * la, uint32_t ohN, uint32_t mask)
     return;
 }
 
-void loadVT1Local(localArgs * la, uint32_t ohN, std::string config_file, uint32_t vt1)
+void loadVT1Local(localArgs *la, uint32_t ohN, std::string config_file, uint32_t vt1)
 {
   char regBase [100];
   sprintf(regBase,"GEM_AMC.OH.OH%i",ohN);
@@ -1008,7 +1017,7 @@ void loadVT1(const RPCMsg *request, RPCMsg *response)
   rtxn.abort();
 }
 
-void loadTRIMDACLocal(localArgs * la, uint32_t ohN, std::string config_file)
+void loadTRIMDACLocal(localArgs *la, uint32_t ohN, std::string config_file)
 {
   std::ifstream infile(config_file);
   std::string line, regName;
@@ -1040,6 +1049,7 @@ void loadTRIMDAC(const RPCMsg *request, RPCMsg *response)
   rtxn.abort();
 }
 
+// FIXME VFAT2 OBSOLETE
 void configureVFATs(const RPCMsg *request, RPCMsg *response)
 {
   GETLOCALARGS(response);

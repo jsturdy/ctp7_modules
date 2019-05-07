@@ -10,8 +10,6 @@
 
 #include "utils.h"
 
-#include "hw_constants.h" // FIXME forward declarations only?
-
 #include <string>
 
 /*!
