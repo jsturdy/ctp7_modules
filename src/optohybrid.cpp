@@ -1,9 +1,10 @@
 #include "optohybrid.h"
 
 #include "amc.h"
+#include "amc/blaster_ram.h"
 #include "hw_constants.h"
 
-void configureScanModuleLocal(localArgs * la, uint32_t ohN, uint32_t vfatN, uint32_t scanmode,
+void configureScanModuleLocal(localArgs *la, uint32_t ohN, uint32_t vfatN, uint32_t scanmode,
                               bool useUltra, uint32_t mask, uint32_t ch, uint32_t nevts,
                               uint32_t dacMin, uint32_t dacMax, uint32_t dacStep)
 {
@@ -80,7 +81,7 @@ void configureScanModule(const RPCMsg *request, RPCMsg *response)
     rtxn.abort();
 }
 
-void printScanConfigurationLocal(localArgs * la, uint32_t ohN, bool useUltra)
+void printScanConfigurationLocal(localArgs *la, uint32_t ohN, bool useUltra)
 {
     std::stringstream sstream;
     sstream<<ohN;
@@ -139,7 +140,7 @@ void printScanConfiguration(const RPCMsg *request, RPCMsg *response){
     rtxn.abort();
 }
 
-void startScanModuleLocal(localArgs * la, uint32_t ohN, bool useUltra)
+void startScanModuleLocal(localArgs *la, uint32_t ohN, bool useUltra)
 {
     std::stringstream scanBase;
     scanBase << "GEM_AMC.OH.OH" << ohN << ".ScanController";
@@ -198,7 +199,7 @@ void startScanModule(const RPCMsg *request, RPCMsg *response)
     rtxn.abort();
 }
 
-void getUltraScanResultsLocal(localArgs * la, uint32_t *outData, uint32_t ohN, uint32_t nevts, uint32_t dacMin, uint32_t dacMax, uint32_t dacStep)
+void getUltraScanResultsLocal(localArgs *la, uint32_t *outData, uint32_t ohN, uint32_t nevts, uint32_t dacMin, uint32_t dacMax, uint32_t dacStep)
 {
     std::stringstream sstream;
     sstream<<ohN;
@@ -278,7 +279,7 @@ void getUltraScanResults(const RPCMsg *request, RPCMsg *response)
     rtxn.abort();
 }
 
-void statusOHLocal(localArgs * la, uint32_t ohEnMask)
+void statusOHLocal(localArgs *la, uint32_t ohEnMask)
 {
     std::string regs [] = {"CFG_PULSE_STRETCH ",
                            "TRIG.CTRL.SBIT_SOT_READY",
@@ -323,355 +324,178 @@ void statusOH(const RPCMsg *request, RPCMsg *response)
     GETLOCALARGS(response);
 
     uint32_t ohEnMask = request->get_word("ohEnMask");
-    LOGGER->log_message(LogManager::INFO, "Reeading OH status");
+    LOGGER->log_message(LogManager::INFO, "Reading OH status");
 
     statusOHLocal(&la, ohEnMask);
     rtxn.abort();
 }
 
-size_t readOptoHybridConfigLocal(localArgs * la, uint8_t const& ohN, uint32_t* config)
+uint32_t getOptoHybridBaseAddress(localArgs *la, uint8_t const& ohN)
 {
-    // FIXME put these into HW constants?
-    // "TRIG.TIMING.TAP_DELAY_VFATXX_BIY"; // XX 0 -- 23, Y 0 -- 7, each is 5 bits
-    // "FPGA.CONTROL.HDMI.SBIT_SELXX";    // XX 0 -- 8, each is 5 bits
-    // "FPGA.CONTROL.HDMI.SBIT_MODEXX";     // XX 0 -- 8, each is 2 bits
-    // "TRIG.TIMING.SOT_TAP_DELAY_VFATXX"; // XX 0 -- 23, each is 5 bits
-    // Slightly complicated, as not all of these are full registers
-    const std::string cfgregs [] = {
-        "FPGA.CONTROL.TTC.BXN_OFFSET", // highest 16 bits of some register
-        "TRIG.CTRL.VFAT_MASK",         // 24 bits, others unused
-        "FPGA.CONTROL.HDMI.SBIT_SEL0",  // 0x0:0x0000001f as above
-        "FPGA.CONTROL.HDMI.SBIT_SEL1",  // 0x0:0x000003e0 as above
-        "FPGA.CONTROL.HDMI.SBIT_SEL2",  // 0x0:0x00007c00 as above
-        "FPGA.CONTROL.HDMI.SBIT_SEL3",  // 0x0:0x000f8000 as above
-        "FPGA.CONTROL.HDMI.SBIT_SEL4",  // 0x0:0x01f00000 as above
-        "FPGA.CONTROL.HDMI.SBIT_SEL5",  // 0x0:0x3e000000 as above
-        "FPGA.CONTROL.HDMI.SBIT_SEL6",  // 0x1:0x0000001f as above
-        "FPGA.CONTROL.HDMI.SBIT_SEL7",  // 0x1:0x000003e0 as above
-        "FPGA.CONTROL.HDMI.SBIT_MODE0", // 0x1:0x00000c00 as above
-        "FPGA.CONTROL.HDMI.SBIT_MODE1", // 0x1:0x00003000 as above
-        "FPGA.CONTROL.HDMI.SBIT_MODE2", // 0x1:0x0000c000 as above
-        "FPGA.CONTROL.HDMI.SBIT_MODE3", // 0x1:0x00030000 as above
-        "FPGA.CONTROL.HDMI.SBIT_MODE4", // 0x1:0x000c0000 as above
-        "FPGA.CONTROL.HDMI.SBIT_MODE5", // 0x1:0x00300000 as above
-        "FPGA.CONTROL.HDMI.SBIT_MODE6", // 0x1:0x00c00000 as above
-        "FPGA.CONTROL.HDMI.SBIT_MODE7", // 0x1:0x03000000 as above
+    std::stringstream regName;
+    regName << "GEM_AMC.OH.OH" << static_cast<int>(ohN) << ".FPGA";
+    return getAddress(la,regName.str());
+}
 
-        "TRIG.TIMING.TAP_DELAY_VFAT0_BIT0",   // 0x00:0x0000001f, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT0_BIT1",   // 0x00:0x000003e0, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT0_BIT2",   // 0x00:0x00007c00, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT0_BIT3",   // 0x00:0x000f8000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT0_BIT4",   // 0x00:0x01f00000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT0_BIT5",   // 0x00:0x3e000000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT0_BIT6",   // 0x01:0x0000001f, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT0_BIT7",   // 0x01:0x000003e0, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT1_BIT0",   // 0x01:0x00007c00, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT1_BIT1",   // 0x01:0x000f8000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT1_BIT2",   // 0x01:0x01f00000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT1_BIT3",   // 0x01:0x3e000000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT1_BIT4",   // 0x02:0x0000001f, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT1_BIT5",   // 0x02:0x000003e0, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT1_BIT6",   // 0x02:0x00007c00, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT1_BIT7",   // 0x02:0x000f8000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT2_BIT0",   // 0x02:0x01f00000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT2_BIT1",   // 0x02:0x3e000000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT2_BIT2",   // 0x03:0x0000001f, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT2_BIT3",   // 0x03:0x000003e0, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT2_BIT4",   // 0x03:0x00007c00, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT2_BIT5",   // 0x03:0x000f8000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT2_BIT6",   // 0x03:0x01f00000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT2_BIT7",   // 0x03:0x3e000000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT3_BIT0",   // 0x04:0x0000001f, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT3_BIT1",   // 0x04:0x000003e0, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT3_BIT2",   // 0x04:0x00007c00, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT3_BIT3",   // 0x04:0x000f8000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT3_BIT4",   // 0x04:0x01f00000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT3_BIT5",   // 0x04:0x3e000000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT3_BIT6",   // 0x05:0x0000001f, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT3_BIT7",   // 0x05:0x000003e0, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT4_BIT0",   // 0x05:0x00007c00, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT4_BIT1",   // 0x05:0x000f8000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT4_BIT2",   // 0x05:0x01f00000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT4_BIT3",   // 0x05:0x3e000000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT4_BIT4",   // 0x06:0x0000001f, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT4_BIT5",   // 0x06:0x000003e0, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT4_BIT6",   // 0x06:0x00007c00, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT4_BIT7",   // 0x06:0x000f8000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT5_BIT0",   // 0x06:0x01f00000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT5_BIT1",   // 0x06:0x3e000000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT5_BIT2",   // 0x07:0x0000001f, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT5_BIT3",   // 0x07:0x000003e0, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT5_BIT4",   // 0x07:0x00007c00, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT5_BIT5",   // 0x07:0x000f8000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT5_BIT6",   // 0x07:0x01f00000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT5_BIT7",   // 0x07:0x3e000000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT6_BIT0",   // 0x08:0x0000001f, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT6_BIT1",   // 0x08:0x000003e0, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT6_BIT2",   // 0x08:0x00007c00, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT6_BIT3",   // 0x08:0x000f8000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT6_BIT4",   // 0x08:0x01f00000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT6_BIT5",   // 0x08:0x3e000000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT6_BIT6",   // 0x09:0x0000001f, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT6_BIT7",   // 0x09:0x000003e0, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT7_BIT0",   // 0x09:0x00007c00, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT7_BIT1",   // 0x09:0x000f8000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT7_BIT2",   // 0x09:0x01f00000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT7_BIT3",   // 0x09:0x3e000000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT7_BIT4",   // 0x0a:0x0000001f, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT7_BIT5",   // 0x0a:0x000003e0, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT7_BIT6",   // 0x0a:0x00007c00, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT7_BIT7",   // 0x0a:0x000f8000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT8_BIT0",   // 0x0a:0x01f00000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT8_BIT1",   // 0x0a:0x3e000000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT8_BIT2",   // 0x0b:0x0000001f, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT8_BIT3",   // 0x0b:0x000003e0, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT8_BIT4",   // 0x0b:0x00007c00, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT8_BIT5",   // 0x0b:0x000f8000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT8_BIT6",   // 0x0b:0x01f00000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT8_BIT7",   // 0x0b:0x3e000000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT9_BIT0",   // 0x0c:0x0000001f, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT9_BIT1",   // 0x0c:0x000003e0, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT9_BIT2",   // 0x0c:0x00007c00, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT9_BIT3",   // 0x0c:0x000f8000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT9_BIT4",   // 0x0c:0x01f00000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT9_BIT5",   // 0x0c:0x3e000000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT9_BIT6",   // 0x0d:0x0000001f, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT9_BIT7",   // 0x0d:0x000003e0, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT10_BIT0",  // 0x0d:0x00007c00, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT10_BIT1",  // 0x0d:0x000f8000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT10_BIT2",  // 0x0d:0x01f00000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT10_BIT3",  // 0x0d:0x3e000000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT10_BIT4",  // 0x0e:0x0000001f, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT10_BIT5",  // 0x0e:0x000003e0, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT10_BIT6",  // 0x0e:0x00007c00, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT10_BIT7",  // 0x0e:0x000f8000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT11_BIT0",  // 0x0e:0x01f00000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT11_BIT1",  // 0x0e:0x3e000000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT11_BIT2",  // 0x0f:0x0000001f, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT11_BIT3",  // 0x0f:0x000003e0, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT11_BIT4",  // 0x0f:0x00007c00, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT11_BIT5",  // 0x0f:0x000f8000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT11_BIT6",  // 0x0f:0x01f00000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT11_BIT7",  // 0x0f:0x3e000000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT12_BIT0",  // 0x10:0x0000001f, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT12_BIT1",  // 0x10:0x000003e0, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT12_BIT2",  // 0x10:0x00007c00, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT12_BIT3",  // 0x10:0x000f8000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT12_BIT4",  // 0x10:0x01f00000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT12_BIT5",  // 0x10:0x3e000000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT12_BIT6",  // 0x11:0x0000001f, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT12_BIT7",  // 0x11:0x000003e0, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT13_BIT0",  // 0x11:0x00007c00, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT13_BIT1",  // 0x11:0x000f8000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT13_BIT2",  // 0x11:0x01f00000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT13_BIT3",  // 0x11:0x3e000000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT13_BIT4",  // 0x12:0x0000001f, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT13_BIT5",  // 0x12:0x000003e0, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT13_BIT6",  // 0x12:0x00007c00, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT13_BIT7",  // 0x12:0x000f8000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT14_BIT0",  // 0x12:0x01f00000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT14_BIT1",  // 0x12:0x3e000000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT14_BIT2",  // 0x13:0x0000001f, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT14_BIT3",  // 0x13:0x000003e0, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT14_BIT4",  // 0x13:0x00007c00, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT14_BIT5",  // 0x13:0x000f8000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT14_BIT6",  // 0x13:0x01f00000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT14_BIT7",  // 0x13:0x3e000000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT15_BIT0",  // 0x14:0x0000001f, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT15_BIT1",  // 0x14:0x000003e0, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT15_BIT2",  // 0x14:0x00007c00, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT15_BIT3",  // 0x14:0x000f8000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT15_BIT4",  // 0x14:0x01f00000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT15_BIT5",  // 0x14:0x3e000000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT15_BIT6",  // 0x15:0x0000001f, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT15_BIT7",  // 0x15:0x000003e0, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT16_BIT0",  // 0x15:0x00007c00, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT16_BIT1",  // 0x15:0x000f8000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT16_BIT2",  // 0x15:0x01f00000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT16_BIT3",  // 0x15:0x3e000000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT16_BIT4",  // 0x16:0x0000001f, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT16_BIT5",  // 0x16:0x000003e0, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT16_BIT6",  // 0x16:0x00007c00, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT16_BIT7",  // 0x16:0x000f8000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT17_BIT0",  // 0x16:0x01f00000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT17_BIT1",  // 0x16:0x3e000000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT17_BIT2",  // 0x17:0x0000001f, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT17_BIT3",  // 0x17:0x000003e0, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT17_BIT4",  // 0x17:0x00007c00, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT17_BIT5",  // 0x17:0x000f8000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT17_BIT6",  // 0x17:0x01f00000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT17_BIT7",  // 0x17:0x3e000000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT18_BIT0",  // 0x18:0x0000001f, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT18_BIT1",  // 0x18:0x000003e0, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT18_BIT2",  // 0x18:0x00007c00, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT18_BIT3",  // 0x18:0x000f8000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT18_BIT4",  // 0x18:0x01f00000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT18_BIT5",  // 0x18:0x3e000000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT18_BIT6",  // 0x19:0x0000001f, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT18_BIT7",  // 0x19:0x000003e0, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT19_BIT0",  // 0x19:0x00007c00, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT19_BIT1",  // 0x19:0x000f8000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT19_BIT2",  // 0x19:0x01f00000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT19_BIT3",  // 0x19:0x3e000000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT19_BIT4",  // 0x1a:0x0000001f, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT19_BIT5",  // 0x1a:0x000003e0, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT19_BIT6",  // 0x1a:0x00007c00, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT19_BIT7",  // 0x1a:0x000f8000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT20_BIT0",  // 0x1a:0x01f00000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT20_BIT1",  // 0x1a:0x3e000000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT20_BIT2",  // 0x1b:0x0000001f, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT20_BIT3",  // 0x1b:0x000003e0, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT20_BIT4",  // 0x1b:0x00007c00, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT20_BIT5",  // 0x1b:0x000f8000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT20_BIT6",  // 0x1b:0x01f00000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT20_BIT7",  // 0x1b:0x3e000000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT21_BIT0",  // 0x1c:0x0000001f, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT21_BIT1",  // 0x1c:0x000003e0, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT21_BIT2",  // 0x1c:0x00007c00, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT21_BIT3",  // 0x1c:0x000f8000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT21_BIT4",  // 0x1c:0x01f00000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT21_BIT5",  // 0x1c:0x3e000000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT21_BIT6",  // 0x1d:0x0000001f, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT21_BIT7",  // 0x1d:0x000003e0, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT22_BIT0",  // 0x1d:0x00007c00, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT22_BIT1",  // 0x1d:0x000f8000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT22_BIT2",  // 0x1d:0x01f00000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT22_BIT3",  // 0x1d:0x3e000000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT22_BIT4",  // 0x1e:0x0000001f, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT22_BIT5",  // 0x1e:0x000003e0, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT22_BIT6",  // 0x1e:0x00007c00, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT22_BIT7",  // 0x1e:0x000f8000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT23_BIT0",  // 0x1e:0x01f00000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT23_BIT1",  // 0x1e:0x3e000000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT23_BIT2",  // 0x1f:0x0000001f, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT23_BIT3",  // 0x1f:0x000003e0, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT23_BIT4",  // 0x1f:0x00007c00, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT23_BIT5",  // 0x1f:0x000f8000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT23_BIT6",  // 0x1f:0x01f00000, as above
-        "TRIG.TIMING.TAP_DELAY_VFAT23_BIT7",  // 0x1f:0x3e000000, as above
+size_t readOptoHybridRegistersLocal(localArgs *la, uint8_t const& ohN,
+                                    std::string const& base,
+                                    uint32_t const& nRegs,
+                                    uint32_t *config)
+{
+    std::stringstream regName;
+    regName << "GEM_AMC.OH.OH" << static_cast<int>(ohN) << ".FPGA." << base;
+    const uint32_t ohbaseaddr = getOptoHybridBaseAddress(la, ohN);
+    const uint32_t baseaddr   = getAddress(la, regName.str());
+    for (uint32_t reg = 0; reg < nRegs; ++reg) {
+      config[2*reg]   = readRawAddress(baseaddr+reg, la->response);
+      config[2*reg+1] = baseaddr+reg-ohbaseaddr;
+    }
+    
+    return 2*nRegs;
+}
 
-        "TRIG.TIMING.SOT_TAP_DELAY_VFAT0",    // 0x00:0x0000001f, as above
-        "TRIG.TIMING.SOT_TAP_DELAY_VFAT1",    // 0x00:0x000003e0, as above
-        "TRIG.TIMING.SOT_TAP_DELAY_VFAT2",    // 0x00:0x00007c00, as above
-        "TRIG.TIMING.SOT_TAP_DELAY_VFAT3",    // 0x00:0x000f8000, as above
-        "TRIG.TIMING.SOT_TAP_DELAY_VFAT4",    // 0x00:0x01f00000, as above
-        "TRIG.TIMING.SOT_TAP_DELAY_VFAT5",    // 0x00:0x3e000000, as above
-        "TRIG.TIMING.SOT_TAP_DELAY_VFAT6",    // 0x01:0x0000001f, as above
-        "TRIG.TIMING.SOT_TAP_DELAY_VFAT7",    // 0x01:0x000003e0, as above
-        "TRIG.TIMING.SOT_TAP_DELAY_VFAT8",    // 0x01:0x00007c00, as above
-        "TRIG.TIMING.SOT_TAP_DELAY_VFAT9",    // 0x01:0x000f8000, as above
-        "TRIG.TIMING.SOT_TAP_DELAY_VFAT10",   // 0x01:0x01f00000, as above
-        "TRIG.TIMING.SOT_TAP_DELAY_VFAT11",   // 0x01:0x3e000000, as above
-        "TRIG.TIMING.SOT_TAP_DELAY_VFAT12",   // 0x02:0x0000001f, as above
-        "TRIG.TIMING.SOT_TAP_DELAY_VFAT13",   // 0x02:0x000003e0, as above
-        "TRIG.TIMING.SOT_TAP_DELAY_VFAT14",   // 0x02:0x00007c00, as above
-        "TRIG.TIMING.SOT_TAP_DELAY_VFAT15",   // 0x02:0x000f8000, as above
-        "TRIG.TIMING.SOT_TAP_DELAY_VFAT16",   // 0x02:0x01f00000, as above
-        "TRIG.TIMING.SOT_TAP_DELAY_VFAT17",   // 0x02:0x3e000000, as above
-        "TRIG.TIMING.SOT_TAP_DELAY_VFAT18",   // 0x03:0x0000001f, as above
-        "TRIG.TIMING.SOT_TAP_DELAY_VFAT19",   // 0x03:0x000003e0, as above
-        "TRIG.TIMING.SOT_TAP_DELAY_VFAT20",   // 0x03:0x00007c00, as above
-        "TRIG.TIMING.SOT_TAP_DELAY_VFAT21",   // 0x03:0x000f8000, as above
-        "TRIG.TIMING.SOT_TAP_DELAY_VFAT22",   // 0x03:0x01f00000, as above
-        "TRIG.TIMING.SOT_TAP_DELAY_VFAT23",   // 0x03:0x3e000000, as above
-    };
+size_t writeOptoHybridRegistersLocal(localArgs *la, uint8_t const& ohN,
+                                     std::string const& base,
+                                     uint32_t const& nRegs,
+                                     uint32_t *config)
+{
+    std::stringstream regName;
+    regName << "GEM_AMC.OH.OH" << static_cast<int>(ohN) << ".FPGA." << base;
+    const uint32_t ohbaseaddr = getOptoHybridBaseAddress(la, ohN);
+    const uint32_t baseaddr   = getAddress(la, regName.str());
+    for (uint32_t reg = 0; reg < nRegs; ++reg) {
+        writeRawAddress(baseaddr+reg+config[2+reg+1], config[2+reg], la->response);
+    }
+    
+    return 2*nRegs;
+}
 
-    // FIXME registers and addresses, but what are stored in the DB are address table registers, not 32-bit registers
-    std::string regName;
+size_t readOptoHybridHDMIConfigLocal(localArgs *la, uint8_t const& ohN, uint32_t *config)
+{
+    // CONTROL.HDMI.SBIT_SEL0-7 (5 bits each)
+    // CONTROL.HDMI.SBIT_MODE0-7 (2 bits each)
+    // fully contained in 2 registers
+    const size_t nHDMIRegs = 2;
+    // const std::string base = "CONTROL.HDMI"; // FIXME, requries vX.Y.Z of OHv3 FW
+    const std::string base = "CONTROL.HDMI.SBIT_SEL0";
+    return readOptoHybridRegistersLocal(la, ohN, base, nHDMIRegs, config);
+}
 
-    std::stringstream regBase;
-    regBase << "GEM_AMC.OH.OH." << static_cast<int>(ohN);
-    size_t i = 0;
-    // FIXME read based on raw address, works for reading, what about writing?
-    uint32_t oldaddr = 0x0;
-    for (auto const& reg : cfgregs) {
-        regName = regBase.str()+reg;
-        uint32_t regaddr = getAddress(la, regBase.str());
-        if (regaddr != oldaddr) {
-          config[i] = readReg(la, regName);
-          ++i;
-        }
-        oldaddr = regaddr;
+size_t readOptoHybridTAPDelayConfigLocal(localArgs *la, uint8_t const& ohN, uint32_t *config)
+{
+    // VFAT s-bit TAP delays, 6 blocks of 5 bits in each 32-bit register
+    // 24*8 = 96 setings in 24*8/6 = 32 registers, starting from a base of
+    // "TRIG.TIMING.TAP_DELAYS" suggested change, with VFATXX_BITYY" as sub-nodes
+    // "TRIG.TIMING.TAP_DELAY_VFAT0_BIT0"
+    const size_t nTAPRegs = 32;
+    const std::string base = "TRIG.TIMING.TAP_DELAY_VFAT0_BIT0";
+    return readOptoHybridRegistersLocal(la, ohN, base, nTAPRegs, config);
+}
+
+size_t readOptoHybridSOTTAPDelayConfigLocal(localArgs *la, uint8_t const& ohN, uint32_t *config)
+{
+    // VFAT SOT TAP delays, 6 blocks of 5 bits in each 32-bit register
+    // 24 settings in 24/6 = 4 registers, starting from a base of
+    // "TRIG.TIMING.SOT_TAP_DELAYS" suggested change, with VFATXX as sub-nodes?
+    // "TRIG.TIMING.SOT_TAP_DELAY_VFAT0"
+    const size_t nSOTTAPRegs = 4;
+    const std::string base = "TRIG.TIMING.SOT_TAP_DELAY_VFAT0";
+    return readOptoHybridRegistersLocal(la, ohN, base, nSOTTAPRegs, config);
+}
+
+size_t readOptoHybridConfigLocal(localArgs *la, uint8_t const& ohN, uint32_t *config)
+{
+    size_t wrdcnt = 0x0;
+    for (auto && cfg : oh::CONFIG_MAP) {
+        wrdcnt += readOptoHybridRegistersLocal(la, ohN, cfg.first, cfg.second, config+wrdcnt);
     }
 
-    // FIXME read based on individual masked registers, perform necessary bit shifts
-    size_t idx = 0;
-    for (size_t sb = 0; sb < 8; ++sb) {
-        std::stringstream regname;
-        regname << "FPGA.CONTROL.HDMI.SBIT_SEL" << sb;
-        uint32_t val = readReg(la,regname.str());
-        config[idx] |= val<<(5*i);
-        if (i%6 == 5) {
-            ++idx;
-        }
-        ++i;
+    // // Alternative method, call specific functions, need to get the first two configs
+    // size_t wrdcnt = 0x0;
+    // wrdcnt += readOptoHybridRegistersLocal(la, ohN, "CONTROL.TTC.BXN_OFFSET", 1, config+wrdcnt);
+    // wrdcnt += readOptoHybridRegistersLocal(la, ohN, "TRIG.CTRL.VFAT_MASK",    1, config+wrdcnt);
+    // wrdcnt += readOptoHybridHDMIConfigLocal(la, ohN, config+wrdcnt);
+    // wrdcnt += readOptoHybridTAPDelayConfigLocal(la, ohN, config+wrdcnt);
+    // wrdcnt += readOptoHybridSOTTAPDelayConfigLocal(la, ohN, config+wrdcnt);
+    return wrdcnt;
+}
+
+size_t writeOptoHybridConfigLocal(localArgs *la, uint8_t const& ohN, uint32_t *config)
+{
+    size_t wrdcnt = 0x0;
+    for (auto && cfg : oh::CONFIG_MAP) {
+        wrdcnt += writeOptoHybridRegistersLocal(la, ohN, cfg.first, cfg.second, config+wrdcnt);
     }
 
-    idx = i;
-    i = 0;
-    for (size_t sb = 0; sb < 8; ++sb) {
-        std::stringstream regname;
-        regname << "FPGA.CONTROL.HDMI.SBIT_MODE" << sb;
-        uint32_t val = readReg(la,regname.str());
-        config[idx] |= val<<(2*i);
-        if (i%6 == 5) {
-            ++idx;
-        }
-        ++i;
-    }
-
-    idx = i;
-    i = 0;
-    for (size_t vf = 0; vf < oh::VFATS_PER_OH; ++vf) {
-        for (size_t sb = 0; sb < 8; ++sb) {
-            std::stringstream regname;
-            regname << "TRIG.TIMING.TAP_DELAY_VFAT" << vf
-                    << "_BIT" << sb;
-            uint32_t val = readReg(la,regname.str());
-            config[idx] |= val<<(5*i);
-            if (i%6 == 5) {
-                ++idx;
-            }
-        }
-        ++i;
-    }
-
-    i = 0;
-    for (size_t vf = 0; vf < oh::VFATS_PER_OH; ++vf) {
-        std::stringstream regname;
-        regname << "TRIG.TIMING.SOT_TAP_DELAY_VFAT" << vf;
-        uint32_t val = readReg(la,regname.str());
-        config[idx] |= val<<(5*i);
-        if (i%6 == 5) {
-            ++idx;
-        }
-    }
-
-    // std::for_each(cfgregs.begin(); cfgregs .end(); [idx=0] (int i) mutable {
-    //     regName = regBase.str()+reg;
-    //     config[i] = readReg(la, regName);
-    //     ++idx;
-    //   });
-
-    return 0x0;
+    // // Alternative method, call specific functions, need to get the first two configs
+    // size_t wrdcnt = 0x0;
+    // wrdcnt += writeOptoHybridRegistersLocal(la, ohN, "CONTROL.TTC.BXN_OFFSET", 1, config+wrdcnt);
+    // wrdcnt += writeOptoHybridRegistersLocal(la, ohN, "TRIG.CTRL.VFAT_MASK",    1, config+wrdcnt);
+    // wrdcnt += writeOptoHybridHDMIConfigLocal(la, ohN, config+wrdcnt);
+    // wrdcnt += writeOptoHybridTAPDelayConfigLocal(la, ohN, config+wrdcnt);
+    // wrdcnt += writeOptoHybridSOTTAPDelayConfigLocal(la, ohN, config+wrdcnt);
+    return wrdcnt;
 }
 
 void readOptoHybridConfig(const RPCMsg *request, RPCMsg *response)
 {
     GETLOCALARGS(response);
 
-    uint32_t ohN = request->get_word("ohN");
+    const uint32_t ohN = request->get_word("ohN");
 
     std::vector<uint32_t> config;
     config.resize(oh::OH_SINGLE_RAM_SIZE);
     try {
-      readOptoHybridConfigLocal(&la, ohN, config.data());
-      response->set_binarydata("config",config.data(),config.size());
+      const uint32_t cfg_sz = readOptoHybridConfigLocal(&la, ohN, config.data());
+      // response->set_binarydata("config",config.data(),config.size());
+      response->set_binarydata("config", config.data(), cfg_sz);
     } catch (const std::runtime_error& e) {
       std::stringstream errmsg;
       errmsg << "Error reading OptoHybrid config: " << e.what();
       LOGGER->log_message(LogManager::ERROR,errmsg.str());
       response->set_string("error", errmsg.str());
+    }
+
+    rtxn.abort();
+}
+
+void writeOptoHybridConfig(const RPCMsg *request, RPCMsg *response)
+{
+    GETLOCALARGS(response);
+
+    const uint32_t ohN = request->get_word("ohN");
+    bool useRAM  = false;
+    if (request->get_key_exists("useRAM"))
+        useRAM = request->get_word("useRAM");
+
+    std::vector<uint32_t> config;
+    if (!useRAM) {
+        if (request->get_key_exists("config")) {
+            uint32_t cfg_sz = request->get_binarydata_size("config");
+            config.resize(cfg_sz);
+            request->get_binarydata("config", config.data(), config.size());
+        } else {
+            std::stringstream errmsg;
+            errmsg << "Unable to configure OptoHybrid, no configuration provided";
+            EMIT_RPC_ERROR(la.response, errmsg.str(), (void)"");
+        }
+    } else {
+        config.resize(oh::OH_SINGLE_RAM_SIZE);
+        try {
+          const uint32_t cfg_sz = readOptoHybridConfRAMLocal(&la, config.data(), config.size(), (0x1<<ohN));
+        } catch (const std::runtime_error& e) {
+            std::stringstream errmsg;
+            errmsg << "Error reading OptoHybrid config from RAM: " << e.what();
+            EMIT_RPC_ERROR(la.response, errmsg.str(), (void)"");
+        }
+    }
+
+    try {
+        writeOptoHybridConfigLocal(&la, ohN, config.data());
+    } catch (const std::runtime_error& e) {
+        std::stringstream errmsg;
+        errmsg << "Error writing OptoHybrid config: " << e.what();
+        EMIT_RPC_ERROR(la.response, errmsg.str(), (void)"");
     }
 
     rtxn.abort();
@@ -692,5 +516,6 @@ extern "C" {
         modmgr->register_method("optohybrid", "printScanConfiguration",   printScanConfiguration);
         modmgr->register_method("optohybrid", "startScanModule",          startScanModule);
         modmgr->register_method("optohybrid", "statusOH",                 statusOH);
+        modmgr->register_method("optohybrid", "readOptoHybridConfig",     readOptoHybridConfig);
     }
 }
