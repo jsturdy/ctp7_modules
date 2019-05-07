@@ -22,28 +22,29 @@ void scanGBTPhases(const RPCMsg *request, RPCMsg *response)
 {
     GETLOCALARGS(response);
 
-    // Get the keys
     const uint32_t ohN = request->get_word("ohN");
     const uint32_t nScans = request->get_word("nScans");
     const uint8_t phaseMin = request->get_word("phaseMin");
     const uint8_t phaseMax = request->get_word("phaseMax");
     const uint8_t phaseStep = request->get_word("phaseStep");
 
-    // Perform the scan
     LOGGER->log_message(LogManager::INFO, stdsprintf("Calling Local Method for OH #%u.", ohN));
-    if (scanGBTPhasesLocal(&la, ohN, nScans, phaseMin, phaseMax, phaseStep)) {
-        LOGGER->log_message(LogManager::INFO, stdsprintf("GBT Scan for OH #%u Failed.", ohN));
-        rtxn.abort();
+    try {
+      scanGBTPhasesLocal(&la, ohN, nScans, phaseMin, phaseMax, phaseStep);
+    } catch (const std::runtime_error& e) {
+      std::stringstream errmsg;
+      errmsg << "GBT Scan for OH #" << ohN << " Failed: " << e.what();
+      rtxn.abort();  // FIXME necessary?
+      EMIT_RPC_ERROR(la.response, errmsg.str(), (void)"");
     }
 
     rtxn.abort();
-} //Enc scanGBTPhase
+}
 
 bool scanGBTPhasesLocal(localArgs *la, const uint32_t ohN, const uint32_t N, const uint8_t phaseMin, const uint8_t phaseMax, const uint8_t phaseStep)
 {
     LOGGER->log_message(LogManager::INFO, stdsprintf("Scanning the phases for OH #%u.", ohN));
 
-    // ohN check
     const uint32_t ohMax = readReg(la, "GEM_AMC.GEM_SYSTEM.CONFIG.NUM_OF_OH");
     if (ohN >= ohMax) {
         std::stringstream errmsg;
@@ -54,15 +55,14 @@ bool scanGBTPhasesLocal(localArgs *la, const uint32_t ohN, const uint32_t N, con
         throw std::runtime_error(errmsg.str());
     }
 
-    // phaseMin check
     if (gbt::checkPhase(la->response, phaseMin))
-        return true;
+        throw std::runtime_error("Invalid phase specified");
+        // return true;
 
-    // phaseMax check
     if (gbt::checkPhase(la->response, phaseMax))
-        return true;
+        throw std::runtime_error("Invalid phase specified");
+        // return true;
 
-    // Results array
     std::vector<std::vector<uint32_t>> results(oh::VFATS_PER_OH, std::vector<uint32_t>(16));
 
     // Perform the scan
@@ -78,18 +78,19 @@ bool scanGBTPhasesLocal(localArgs *la, const uint32_t ohN, const uint32_t N, con
 
         for (uint32_t repN = 0; repN < N; ++repN) {
             // Try to synchronize the VFAT's
+            // FIXME this touches all links, is this acceptable?
             writeReg(la, "GEM_AMC.GEM_SYSTEM.CTRL.LINK_RESET", 1);
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
 
             // Check the VFAT status
             for (uint32_t vfatN = 0; vfatN < oh::VFATS_PER_OH; ++vfatN) {
-                const bool linkGood = (readReg(la, stdsprintf("GEM_AMC.OH_LINKS.OH%hu.VFAT%hu.LINK_GOOD", ohN, vfatN)) == 1);
+                const bool linkGood   = (readReg(la, stdsprintf("GEM_AMC.OH_LINKS.OH%hu.VFAT%hu.LINK_GOOD", ohN, vfatN)) == 1);
                 const bool syncErrCnt = (readReg(la, stdsprintf("GEM_AMC.OH_LINKS.OH%hu.VFAT%hu.SYNC_ERR_CNT", ohN, vfatN)) == 0);
-                const bool cfgRun = (readReg(la, stdsprintf("GEM_AMC.OH.OH%hu.GEB.VFAT%hu.CFG_RUN", ohN, vfatN)) != 0xdeaddead);
+                const bool cfgRun     = (readReg(la, stdsprintf("GEM_AMC.OH.OH%hu.GEB.VFAT%hu.CFG_RUN", ohN, vfatN)) != 0xdeaddead);
 
                 // If no errors, the phase is good
                 if (linkGood && syncErrCnt && cfgRun)
-                    results[vfatN][phase]++;
+                    ++results[vfatN][phase];
             }
         }
     }
@@ -108,7 +109,9 @@ void writeGBTConfig(const RPCMsg *request, RPCMsg *response)
 
     const uint32_t ohN  = request->get_word("ohN");
     const uint32_t gbtN = request->get_word("gbtN");
-    const bool useRAM   = request->get_word("useRAM");
+    bool useRAM = false;
+    if (request->get_key_exists("useRAM"))
+      useRAM = request->get_word("useRAM");
 
     uint32_t configSize = 0x0;
     gbt::config_t config{};
@@ -118,7 +121,7 @@ void writeGBTConfig(const RPCMsg *request, RPCMsg *response)
       request->get_binarydata("config", config.data(), config.size());
     } else {
       std::vector<uint32_t> gbtcfg;
-      gbtcfg.resize(gbt::GBT_SINGLE_RAM_SIZE*gbt::GBTS_PER_OH);
+      gbtcfg.resize(gbt::GBT_SINGLE_RAM_SIZE*oh::GBTS_PER_OH);
       configSize = readGBTConfRAMLocal(&la, gbtcfg.data(), gbtcfg.size(), (0x1<<ohN));
 
       // pick the correct GBT cfg out of the blob
@@ -158,11 +161,11 @@ bool writeGBTConfigLocal(localArgs *la, const uint32_t ohN, const uint32_t gbtN,
                << ") exceeds the number of OH's supported by the CTP7 ("
                << ohMax << ").";
         throw std::runtime_error(errmsg.str());
-    } else if (gbtN >= gbt::GBTS_PER_OH) {
+    } else if (gbtN >= oh::GBTS_PER_OH) {
         std::stringstream errmsg;
         errmsg << "The gbtN parameter supplied (" << gbtN
                << ") exceeds the number of GBT's per OH ("
-               << gbt::GBTS_PER_OH << ").";
+               << oh::GBTS_PER_OH << ").";
         throw std::runtime_error(errmsg.str());
     }
 
@@ -182,7 +185,7 @@ void writeAllGBTConfigs(const RPCMsg *request, RPCMsg *response)
     const bool useRAM  = request->get_word("useRAM");
 
     uint32_t configSize = 0x0;
-    std::array<gbt::config_t, gbt::GBTS_PER_OH> gbtcfg{};
+    std::array<gbt::config_t, oh::GBTS_PER_OH> gbtcfg{};
     std::vector<uint32_t> config;
 
     // Extract the configuration of the GBTx chips, can anything in here throw?
@@ -208,7 +211,7 @@ void writeAllGBTConfigs(const RPCMsg *request, RPCMsg *response)
         }
       }
     } else { // use BLASTER values
-      config.resize(gbt::GBT_SINGLE_RAM_SIZE*gbt::GBTS_PER_OH);
+      config.resize(gbt::GBT_SINGLE_RAM_SIZE*oh::GBTS_PER_OH);
       // FIXME this might throw
       configSize = readGBTConfRAMLocal(&la, config.data(), config.size(), (0x1<<ohN));
 
@@ -271,7 +274,6 @@ bool writeGBTPhaseLocal(localArgs *la, const uint32_t ohN, const uint32_t vfatN,
 {
     LOGGER->log_message(LogManager::INFO, stdsprintf("Writing the VFAT #%u phase of OH #%u.", vfatN, ohN));
 
-    // ohN check
     const uint32_t ohMax = readReg(la, "GEM_AMC.GEM_SYSTEM.CONFIG.NUM_OF_OH");
     if (ohN >= ohMax) {
         std::stringstream errmsg;
@@ -283,7 +285,6 @@ bool writeGBTPhaseLocal(localArgs *la, const uint32_t ohN, const uint32_t vfatN,
         throw std::runtime_error(errmsg.str());
     }
 
-    // vfatN check
     if (vfatN >= oh::VFATS_PER_OH) {
         std::stringstream errmsg;
         errmsg << "The vfatN parameter supplied (" << vfatN
@@ -296,7 +297,8 @@ bool writeGBTPhaseLocal(localArgs *la, const uint32_t ohN, const uint32_t vfatN,
 
     // phase check
     if (gbt::checkPhase(la->response, phase))
-        return true;
+        throw std::runtime_error("Invalid phase specified");
+        // return true;
 
     // Write the triplicated phase registers
     const uint32_t gbtN = gbt::elinkMappings::VFAT_TO_GBT[vfatN];
@@ -313,11 +315,11 @@ bool writeGBTPhaseLocal(localArgs *la, const uint32_t ohN, const uint32_t vfatN,
 
 bool writeGBTRegLocal(localArgs *la, const uint32_t ohN, const uint32_t gbtN, const uint16_t address, const uint8_t value)
 {
-    if (gbtN >= gbt::GBTS_PER_OH) {
+    if (gbtN >= oh::GBTS_PER_OH) {
         std::stringstream errmsg;
         errmsg << "The gbtN parameter supplied (" << gbtN
                << ") exceeds the number of GBT's per OH ("
-               << gbt::GBTS_PER_OH << ").";
+               << oh::GBTS_PER_OH << ").";
         // EMIT_RPC_ERROR(la->response, errmsg.str(), true);
         throw std::runtime_error(errmsg.str());
     } else if (address >= gbt::CONFIG_SIZE) {
@@ -333,7 +335,7 @@ bool writeGBTRegLocal(localArgs *la, const uint32_t ohN, const uint32_t gbtN, co
     // GBT registers are 8 bits long
     writeReg(la, "GEM_AMC.SLOW_CONTROL.IC.READ_WRITE_LENGTH", 1);
 
-    const uint32_t linkN = ohN*gbt::GBTS_PER_OH + gbtN;
+    const uint32_t linkN = ohN*oh::GBTS_PER_OH + gbtN;
     writeReg(la, "GEM_AMC.SLOW_CONTROL.IC.GBTX_LINK_SELECT", linkN);
 
     // Write to the register
@@ -405,11 +407,11 @@ bool readGBTConfigLocal(localArgs *la, const uint32_t ohN, const uint32_t gbtN, 
                << ohMax << ").";
         // EMIT_RPC_ERROR(la->response, errmsg.str(), true);
         throw std::runtime_error(errmsg.str());
-    } else if (gbtN >= gbt::GBTS_PER_OH) {
+    } else if (gbtN >= oh::GBTS_PER_OH) {
         std::stringstream errmsg;
         errmsg << "The gbtN parameter supplied (" << gbtN
                << ") exceeds the number of GBT's per OH ("
-               << gbt::GBTS_PER_OH << ").";
+               << oh::GBTS_PER_OH << ").";
         // EMIT_RPC_ERROR(la->response, errmsg.str(), true);
         throw std::runtime_error(errmsg.str());
     }
@@ -423,11 +425,11 @@ bool readGBTConfigLocal(localArgs *la, const uint32_t ohN, const uint32_t gbtN, 
 
 uint8_t readGBTRegLocal(localArgs *la, const uint32_t ohN, const uint32_t gbtN, const uint16_t address)
 {
-    if (gbtN >= gbt::GBTS_PER_OH) {
+    if (gbtN >= oh::GBTS_PER_OH) {
         std::stringstream errmsg;
         errmsg << "The gbtN parameter supplied (" << gbtN
                << ") is larger than the number of GBT's per OH ("
-               << gbt::GBTS_PER_OH << ").";
+               << oh::GBTS_PER_OH << ").";
         // EMIT_RPC_ERROR(la->response, errmsg.str(), true);
         throw std::runtime_error(errmsg.str());
     } else if (address >= gbt::CONFIG_SIZE) {
@@ -442,7 +444,7 @@ uint8_t readGBTRegLocal(localArgs *la, const uint32_t ohN, const uint32_t gbtN, 
     // GBT registers are 8 bits long
     writeReg(la, "GEM_AMC.SLOW_CONTROL.IC.READ_WRITE_LENGTH", 1);
 
-    const uint32_t linkN = ohN*gbt::GBTS_PER_OH + gbtN;
+    const uint32_t linkN = ohN*oh::GBTS_PER_OH + gbtN;
     writeReg(la, "GEM_AMC.SLOW_CONTROL.IC.GBTX_LINK_SELECT", linkN);
 
     writeReg(la, "GEM_AMC.SLOW_CONTROL.IC.ADDRESS", address);
