@@ -54,9 +54,9 @@ uint32_t getRAMBaseAddr(localArgs *la, BLASTERTypeT const& type, uint8_t const& 
   std::string regName;
   switch (type) {
   case (BLASTERType::GBT) :
-    if (partN > (gbt::GBTS_PER_OH-1)) {
+    if (partN > (oh::GBTS_PER_OH-1)) {
       std::stringstream errmsg;
-      errmsg << "Invalid GBT specified: GBT" << partN << " > " << (gbt::GBTS_PER_OH-1);
+      errmsg << "Invalid GBT specified: GBT" << partN << " > " << (oh::GBTS_PER_OH-1);
       LOGGER->log_message(LogManager::ERROR, errmsg.str());
       throw std::range_error(errmsg.str());
     }
@@ -174,7 +174,7 @@ uint32_t readGBTConfRAMLocal(localArgs *la, void* gbtblob, size_t const& blob_sz
     return readBlock(la, "GEM_AMC.CONFIG_BLASTER.RAM.GBT", static_cast<uint32_t*>(gbtblob), blob_sz);
   } else {
     // read blob to specific GBT RAM, as specified by ohMask, support non consecutive OptoHybrids?
-    const uint32_t perblk = gbt::GBT_SINGLE_RAM_SIZE*gbt::GBTS_PER_OH;
+    const uint32_t perblk = gbt::GBT_SINGLE_RAM_SIZE*oh::GBTS_PER_OH;
     uint32_t nwords = 0x0;
     uint32_t* blob = static_cast<uint32_t*>(gbtblob);
     for (size_t oh = 0; oh < amc::OH_PER_AMC; ++oh) {
@@ -323,7 +323,7 @@ void writeGBTConfRAMLocal(localArgs *la, uint32_t* gbtblob, size_t const& blob_s
     writeBlock(la, "GEM_AMC.CONFIG_BLASTER.RAM.GBT", gbtblob, blob_sz);
   } else {
     // write blob to specific GBT RAM, as specified by ohMask, support non consecutive OptoHybrids?
-    const uint32_t perblk = gbt::GBT_SINGLE_RAM_SIZE*gbt::GBTS_PER_OH;
+    const uint32_t perblk = gbt::GBT_SINGLE_RAM_SIZE*oh::GBTS_PER_OH;
     uint32_t* blob = gbtblob;
     for (size_t oh = 0; oh < amc::OH_PER_AMC; ++oh) {
       if ((0x1<<oh)&ohMask) {

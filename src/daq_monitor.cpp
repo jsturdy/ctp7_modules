@@ -242,7 +242,7 @@ void getmonGBTLinkLocal(localArgs * la, int NOH, bool doReset)
 
     std::string regName, respName; //regName used for read/write, respName sets word in RPC response
     for (int ohN=0; ohN < NOH; ++ohN) {
-        for (unsigned int gbtN=0; gbtN < gbt::GBTS_PER_OH; ++gbtN) {
+        for (unsigned int gbtN=0; gbtN < oh::GBTS_PER_OH; ++gbtN) {
             //Ready
             respName = stdsprintf("OH%i.GBT%i.READY",ohN,gbtN);
             regName = stdsprintf("GEM_AMC.OH_LINKS.OH%i.GBT%i_READY",ohN,gbtN);
