@@ -104,10 +104,10 @@ uint32_t readConfRAMLocal(localArgs *la, BLASTERTypeT const& type, uint32_t* blo
   }
 
   // do basic memory validation on blob
-  if (!blob) {
+  if (blob == nullptr) {
     std::stringstream errmsg;
     errmsg << "Invalid BLOB " << std::hex << std::setw(8) << std::setfill('0') << blob
-           << std::dec << " provided to write BLASTER RAM";
+           << std::dec << " provided to read BLASTER RAM";
     LOGGER->log_message(LogManager::ERROR, errmsg.str());
     // FIXME throw? or return 0?
     // throw std::runtime_error(errmsg.str());

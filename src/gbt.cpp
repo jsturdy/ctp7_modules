@@ -109,9 +109,7 @@ void writeGBTConfig(const RPCMsg *request, RPCMsg *response)
 
     const uint32_t ohN  = request->get_word("ohN");
     const uint32_t gbtN = request->get_word("gbtN");
-    bool useRAM = false;
-    if (request->get_key_exists("useRAM"))
-      useRAM = request->get_word("useRAM");
+    const bool useRAM   = request->get_key_exists("useRAM") ? request->get_word("useRAM") : false;
 
     uint32_t configSize = 0x0;
     gbt::config_t config{};
@@ -124,7 +122,7 @@ void writeGBTConfig(const RPCMsg *request, RPCMsg *response)
       gbtcfg.resize(gbt::GBT_SINGLE_RAM_SIZE*oh::GBTS_PER_OH);
       configSize = readGBTConfRAMLocal(&la, gbtcfg.data(), gbtcfg.size(), (0x1<<ohN));
 
-      // pick the correct GBT cfg out of the blob
+      // FIXME pick the correct GBT cfg out of the blob
       std::copy_n(reinterpret_cast<uint8_t*>(gbtcfg.data()+(gbtN*gbt::GBT_SINGLE_RAM_SIZE)),
                   gbt::CONFIG_SIZE, config.begin());
       configSize = config.size();
@@ -135,7 +133,7 @@ void writeGBTConfig(const RPCMsg *request, RPCMsg *response)
         errmsg << "The provided configuration does not have the correct size."
                << " Config is " << configSize << " registers long while this methods expects "
                << gbt::CONFIG_SIZE << " 8-bits registers.";
-        rtxn.abort();  // FIXME necessary?
+        rtxn.abort();
         EMIT_RPC_ERROR(la.response, errmsg.str(), (void)"");
     }
 
@@ -182,7 +180,7 @@ void writeAllGBTConfigs(const RPCMsg *request, RPCMsg *response)
     GETLOCALARGS(response);
 
     const uint32_t ohN = request->get_word("ohN");
-    const bool useRAM  = request->get_word("useRAM");
+    const bool useRAM  = request->get_key_exists("useRAM") ? request->get_word("useRAM") : false;
 
     uint32_t configSize = 0x0;
     std::array<gbt::config_t, oh::GBTS_PER_OH> gbtcfg{};
@@ -190,22 +188,23 @@ void writeAllGBTConfigs(const RPCMsg *request, RPCMsg *response)
 
     // Extract the configuration of the GBTx chips, can anything in here throw?
     if (!useRAM) { // use passed config values
-      if (request->get_key_exists("config")) { // FIXME one complete blob?
+      if (request->get_key_exists("config")) { // FIXME only support one complete blob?
         configSize = request->get_binarydata_size("config");
         config.resize(configSize);
         request->get_binarydata("config", config.data(), config.size());
 
         size_t gbtidx = 0;
         for (auto& cfg : gbtcfg) {
-          std::copy_n(reinterpret_cast<uint8_t*>(config.data()+(gbtidx*gbt::GBT_SINGLE_RAM_SIZE)),
+          std::copy_n(reinterpret_cast<uint8_t*>(config.data()+((gbtidx++)*gbt::GBT_SINGLE_RAM_SIZE)),
                       gbt::CONFIG_SIZE, cfg.begin());
-          configSize += cfg.size(); // FIXME not if we do 3 lines before?
+          configSize += cfg.size();
         }
-      } else { // FIXME three separate blobs?
+      } else { // FIXME are three separate blobs supported?
         size_t gbtidx = 0;
         for (auto& cfg : gbtcfg) {
           std::stringstream cfgName;
-          cfgName << "gbt" << gbtidx; // FIXME throws if key doesn't exist?
+          cfgName << "gbt" << (gbtidx++);
+          // FIXME throws if key doesn't exist, no protection as above
           configSize += request->get_binarydata_size(cfgName.str());
           request->get_binarydata(cfgName.str(), cfg.data(), cfg.size());
         }
@@ -217,7 +216,7 @@ void writeAllGBTConfigs(const RPCMsg *request, RPCMsg *response)
 
       size_t gbtidx = 0;
       for (auto& cfg : gbtcfg) {
-        std::copy_n(reinterpret_cast<uint8_t*>(config.data()+(gbtidx*gbt::GBT_SINGLE_RAM_SIZE)),
+        std::copy_n(reinterpret_cast<uint8_t*>(config.data()+((gbtidx++)*gbt::GBT_SINGLE_RAM_SIZE)),
                     gbt::CONFIG_SIZE, cfg.begin());
         configSize += cfg.size(); // FIXME not if we do 3 lines before
       }
@@ -230,14 +229,14 @@ void writeAllGBTConfigs(const RPCMsg *request, RPCMsg *response)
       if (configSize != gbt::CONFIG_SIZE) {
         std::stringstream errmsg;
         errmsg << "The provided configuration does not have the correct size."
-               << " Config is " << configSize << " registers long while this methods expects "
+               << " Config is " << configSize << " registers long while this method expects "
                << gbt::CONFIG_SIZE << " 8-bits registers.";
         rtxn.abort();  // FIXME necessary?
         EMIT_RPC_ERROR(la.response, errmsg.str(), (void)"");
       }
 
       try {
-        writeGBTConfigLocal(&la, ohN, gbtidx, cfg);
+        writeGBTConfigLocal(&la, ohN, (gbtidx++), cfg);
       } catch (const std::runtime_error& e) {
         std::stringstream errmsg;
         errmsg << e.what();

@@ -17,7 +17,8 @@
 #include "amc/blaster_ram.h"
 #include "optohybrid.h"
 
-#include "hw_constants.h"
+#include "hw_constants_checks.h"
+// #include "hw_constants.h"
 
 #include "reedmuller.h"
 
@@ -85,8 +86,8 @@ void configureVFAT3DacMonitor(const RPCMsg *request, RPCMsg *response)
 {
     GETLOCALARGS(response);
 
-    uint32_t ohN = request->get_word("ohN");
-    uint32_t vfatMask = request->get_word("vfatMask");
+    const uint32_t ohN      = request->get_word("ohN");
+    const uint32_t vfatMask = request->get_key_exists("vfatMask") ? request->get_word("vfatMask") : 0x0;
     uint32_t dacSelect = request->get_word("dacSelect");
 
     LOGGER->log_message(LogManager::INFO, stdsprintf("Programming VFAT3 ADC Monitoring for Selection %i",dacSelect));
@@ -129,7 +130,7 @@ void configureVFAT3DacMonitorMultiLink(const RPCMsg *request, RPCMsg *response)
     rtxn.abort();
 }
 
-void configureVFAT3sLocal(localArgs *la, uint32_t ohN, uint32_t vfatMask, uint32_t *config)
+void configureVFAT3sLocal(localArgs *la, uint32_t ohN, uint32_t vfatMask, uint32_t const *config)
 {
     uint32_t goodVFATs = vfatSyncCheckLocal(la, ohN);
     uint32_t notmask = ~vfatMask & 0xFFFFFF;
@@ -185,14 +186,16 @@ void configureVFAT3sLocal(localArgs *la, uint32_t ohN, uint32_t vfatMask, uint32
         LOGGER->log_message(LogManager::INFO, "Loading configuration settings from BLOB not yet implemented");
         size_t offset = 0x0;
         // FIXME presumes certain structure of config:
-        //   32-bit words containing full VFAT configuration
-        //   74 words (includes necessary padding, as per BLASTER interface)
+        //   * 32-bit words containing full VFAT configuration
+        //   * 74 words per VFAT (includes necessary padding, as per BLASTER interface)
+        //   * BLOB does not contain words for masked VFATs, i.e., incompatible with BLASTER interface
         for (size_t vfatN = 0; vfatN < oh::VFATS_PER_OH; ++vfatN) {
             if ((notmask >> vfatN) & 0x1) {
-                uint32_t* vfatcfg = config+offset;
+                uint32_t const* vfatcfg = config+offset;
                 writeVFAT3ConfigLocal(la, ohN, vfatN, vfatcfg);
-                offset += vfat::VFAT_SINGLE_RAM_SIZE;
+                offset += vfat::VFAT_SINGLE_RAM_SIZE;  // FIXME here assumes input data *only* provided for unmasked VFATs
             }
+            // offset += vfat::VFAT_SINGLE_RAM_SIZE;  // FIXME here assumes input data provided for *all* VFATs
         }
     }
 }
@@ -201,37 +204,40 @@ void configureVFAT3s(const RPCMsg *request, RPCMsg *response)
 {
     GETLOCALARGS(response);
 
-    const uint32_t ohN = request->get_word("ohN");
-    bool useRAM  = false;
-    if (request->get_key_exists("useRAM"))
-      useRAM = request->get_word("useRAM");
+    const uint32_t ohN      = request->get_word("ohN");
+    const uint32_t vfatMask = request->get_key_exists("vfatMask") ? request->get_word("vfatMask") : 0x0;
+    const bool useRAM       = request->get_key_exists("useRAM") ? request->get_word("useRAM") : false;
 
-    uint32_t vfatMask   = 0x0;
-    uint32_t configSize = 0x0;
     vfat::config_t config{};
-
+    uint32_t cfg_sz = 0; // FIXME unnecessary?
+    uint32_t* cfg_p = nullptr;
     if (!useRAM) {
-      if (request->get_key_exists("vfatMask"))
-        vfatMask = request->get_word("vfatMask");
-      configureVFAT3sLocal(&la, ohN, vfatMask);
-    } else {
-      std::vector<uint32_t> vfatcfg;
-      vfatcfg.resize(vfat::VFAT_SINGLE_RAM_SIZE*oh::VFATS_PER_OH);
-      configSize = readVFATConfRAMLocal(&la, vfatcfg.data(), vfatcfg.size(), (0x1<<ohN));
-      for (uint8_t vfatN = 0; vfatN < oh::VFATS_PER_OH; ++vfatN) {
-        std::copy_n(reinterpret_cast<uint16_t*>(vfatcfg.data()+(vfatN*vfat::VFAT_SINGLE_RAM_SIZE)),
-                    vfat::CFG_SIZE, config.begin());
-        configSize = config.size();
-        try {
-          // one call per VFAT?
-          writeVFAT3ConfigLocal(&la, ohN, vfatN, reinterpret_cast<uint32_t*>(config.data()));
-        } catch (const std::runtime_error& e) {
-          std::stringstream errmsg;
-          errmsg << "Error writing VFAT3 config: " << e.what();
-          rtxn.abort();  // FIXME necessary?
-          EMIT_RPC_ERROR(la.response, errmsg.str(), (void)"");
+        if (request->get_key_exists("vfatcfg")) {
+            cfg_sz = request->get_binarydata_size("vfatcfg"); // FIXME, does this even matter?
+            request->get_binarydata("vfatcfg", config.data(), config.size());
+            cfg_p = reinterpret_cast<uint32_t*>(config.data());
         }
-      }
+        configureVFAT3sLocal(&la, ohN, vfatMask, cfg_p);
+        cfg_p = nullptr; // FIXME just for safety
+    } else {
+        std::vector<uint32_t> vfatcfg;
+        vfatcfg.resize(vfat::VFAT_SINGLE_RAM_SIZE*oh::VFATS_PER_OH);
+        cfg_sz = readVFATConfRAMLocal(&la, vfatcfg.data(), vfatcfg.size(), (0x1<<ohN));
+        for (uint8_t vfatN = 0; vfatN < oh::VFATS_PER_OH; ++vfatN) {
+            std::copy_n(reinterpret_cast<uint16_t*>(vfatcfg.data()+(vfatN*vfat::VFAT_SINGLE_RAM_SIZE)),
+                        vfat::CFG_SIZE, config.begin());
+            cfg_sz = config.size();
+            try {
+                cfg_p = reinterpret_cast<uint32_t*>(config.data());
+                writeVFAT3ConfigLocal(&la, ohN, vfatN, cfg_p);
+                cfg_p = nullptr; // FIXME just for safety
+            } catch (const std::runtime_error& e) { // FIXME continue on error?
+                std::stringstream errmsg;
+                errmsg << "Error writing VFAT3 config: " << e.what();
+                rtxn.abort();  // FIXME necessary?
+                EMIT_RPC_ERROR(la.response, errmsg.str(), (void)"");
+            }
+        }
     }
     rtxn.abort();
 }
@@ -242,8 +248,8 @@ void getChannelRegistersVFAT3(const RPCMsg *request, RPCMsg *response)
 
     GETLOCALARGS(response);
 
-    uint32_t ohN = request->get_word("ohN");
-    uint32_t vfatMask = request->get_word("vfatMask");
+    const uint32_t ohN      = request->get_word("ohN");
+    const uint32_t vfatMask = request->get_key_exists("vfatMask") ? request->get_word("vfatMask") : 0x0;
 
     uint32_t chanRegData[oh::VFATS_PER_OH*vfat::CHANNELS_PER_VFAT];
 
@@ -314,9 +320,9 @@ void readVFAT3ADC(const RPCMsg *request, RPCMsg *response)
 {
     GETLOCALARGS(response);
 
-    uint32_t ohN = request->get_word("ohN");
+    const uint32_t ohN      = request->get_word("ohN");
+    const uint32_t vfatMask = request->get_key_exists("vfatMask") ? request->get_word("vfatMask") : 0x0;
     bool useExtRefADC = request->get_word("useExtRefADC");
-    uint32_t vfatMask = request->get_word("vfatMask");
 
     uint32_t adcData[oh::VFATS_PER_OH];
 
@@ -477,8 +483,8 @@ void setChannelRegistersVFAT3(const RPCMsg *request, RPCMsg *response)
 
     GETLOCALARGS(response);
 
-    uint32_t ohN = request->get_word("ohN");
-    uint32_t vfatMask = request->get_word("vfatMask");
+    const uint32_t ohN      = request->get_word("ohN");
+    const uint32_t vfatMask = request->get_key_exists("vfatMask") ? request->get_word("vfatMask") : 0x0;
 
     if (request->get_key_exists("simple")) {
         uint32_t chanRegData[3072];
@@ -692,33 +698,30 @@ void getVFAT3ChipIDsLocal(localArgs *la, uint32_t ohN, uint32_t *chipIDs, uint32
 
 void getVFAT3ChipIDs(const RPCMsg *request, RPCMsg *response)
 {
-  // struct localArgs la = getLocalArgs(response);
-  GETLOCALARGS(response);
+    // struct localArgs la = getLocalArgs(response);
+    GETLOCALARGS(response);
 
-  uint32_t ohN = request->get_word("ohN");
+    const uint32_t ohN      = request->get_word("ohN");
+    const uint32_t vfatMask = request->get_key_exists("vfatMask") ? request->get_word("vfatMask") : 0x0;
 
-  uint32_t vfatMask = 0x0;
-  if (request->get_key_exists("vfatMask"))
-    vfatMask = request->get_word("vfatMask");
+    bool rawID = false;
+    if (request->get_key_exists("rawID"))
+        rawID = request->get_word("rawID");
 
-  bool rawID = false;
-  if (request->get_key_exists("rawID"))
-    rawID = request->get_word("rawID");
+    LOGGER->log_message(LogManager::DEBUG, "Reading VFAT3 chipIDs");
 
-  LOGGER->log_message(LogManager::DEBUG, "Reading VFAT3 chipIDs");
-
-  std::vector<uint32_t> chipIDs;
-  chipIDs.resize(oh::VFATS_PER_OH);
-  try {
-    getVFAT3ChipIDsLocal(&la, ohN, chipIDs.data(), vfatMask, rawID);
-  } catch (const std::runtime_error& e) {
-    std::stringstream errmsg;
-    errmsg << "Error reading VFAT3 config: " << e.what();
-    rtxn.abort();  // FIXME necessary?
-    EMIT_RPC_ERROR(la.response, errmsg.str(), (void)"");
-  }
-  response->set_word_array("chipIDs", chipIDs.data(), chipIDs.size());
-  rtxn.abort();
+    std::vector<uint32_t> chipIDs;
+    chipIDs.resize(oh::VFATS_PER_OH);
+    try {
+        getVFAT3ChipIDsLocal(&la, ohN, chipIDs.data(), vfatMask, rawID);
+    } catch (const std::runtime_error& e) {
+        std::stringstream errmsg;
+        errmsg << "Error reading VFAT3 config: " << e.what();
+        rtxn.abort();  // FIXME necessary?
+        EMIT_RPC_ERROR(la.response, errmsg.str(), (void)"");
+    }
+    response->set_word_array("chipIDs", chipIDs.data(), chipIDs.size());
+    rtxn.abort();
 }
 
 uint32_t readVFAT3ConfigLocal(localArgs *la, uint8_t const& ohN, uint8_t const& vfatN, uint32_t *config)
@@ -761,7 +764,7 @@ void readVFAT3Config(const RPCMsg *request, RPCMsg *response)
 }
 
 // void writeVFAT3ConfigLocal(localArgs *la, uint8_t const& ohN, uint8_t const& vfatN, vfat::config_t const& config)
-void writeVFAT3ConfigLocal(localArgs *la, uint8_t const& ohN, uint8_t const& vfatN, uint32_t *config)
+void writeVFAT3ConfigLocal(localArgs *la, uint8_t const ohN, uint8_t const vfatN, uint32_t const *config)
 {
     if (config == nullptr) {
         std::stringstream errmsg;
@@ -769,20 +772,8 @@ void writeVFAT3ConfigLocal(localArgs *la, uint8_t const& ohN, uint8_t const& vfa
         throw std::runtime_error(errmsg.str());
     }
 
-    const uint32_t ohMax = readReg(la, "GEM_AMC.GEM_SYSTEM.CONFIG.NUM_OF_OH");
-    if (ohN >= ohMax) {
-        std::stringstream errmsg;
-        errmsg << "The ohN parameter supplied (" << static_cast<uint32_t>(ohN)
-               << ") exceeds the number of OH's supported by the CTP7 ("
-               << ohMax << ").";
-        throw std::runtime_error(errmsg.str());
-    } else if (vfatN >= oh::VFATS_PER_OH) {
-        std::stringstream errmsg;
-        errmsg << "The vfatN parameter supplied (" << static_cast<uint32_t>(vfatN)
-               << ") exceeds the number of VFAT's per OH ("
-               << oh::VFATS_PER_OH << ").";
-        throw std::runtime_error(errmsg.str());
-    }
+    amc::isValidOptoHybrid(ohN, readReg(la, "GEM_AMC.GEM_SYSTEM.CONFIG.NUM_OF_OH"));
+    oh::isValidVFAT(vfatN);
 
     std::stringstream base;
     base << "GEM_AMC.OH.OH" << static_cast<uint32_t>(ohN)
@@ -790,7 +781,7 @@ void writeVFAT3ConfigLocal(localArgs *la, uint8_t const& ohN, uint8_t const& vfa
          << ".VFAT_CHANNELS";
     uint32_t baseAddr = getAddress(la, base.str());
 
-    uint16_t* vfatconfig = reinterpret_cast<uint16_t*>(config);
+    uint16_t const *vfatconfig = reinterpret_cast<uint16_t const*>(config);
 
     for (size_t reg = 0; reg < vfat::CFG_SIZE; ++reg) {
         writeRawAddress(baseAddr+reg, 0xffff&vfatconfig[reg], la->response);
@@ -815,7 +806,17 @@ void writeVFAT3Config(const RPCMsg *request, RPCMsg *response)
         request->get_binarydata("config", config.data(), cfg_sz);
       } else {
         config.resize(vfat::VFAT_SINGLE_RAM_SIZE);
+
+        // FIXME this does not read from the RAM
         readVFAT3ConfigLocal(&la, ohN, vfatN, config.data());
+
+        std::vector<uint32_t> tmpconfig;
+        tmpconfig.resize(24*vfat::VFAT_SINGLE_RAM_SIZE);
+
+        // FIXME this does not work for a single VFAT,
+        // FIXME rather, it reads the entire VFAT RAM for the specified OH...
+        readVFATConfRAMLocal(&la, tmpconfig.data(), 24*vfat::VFAT_SINGLE_RAM_SIZE, (0x1<<ohN));
+        // FIXME put tmpconfig.data()+(vfatN*vfat::VFAT_SINGLE_RAM_SIZE) into config.data()
       }
     } catch (const std::runtime_error& e) {
       std::stringstream errmsg;

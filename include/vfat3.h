@@ -18,7 +18,7 @@
  *  \param ohN Optohybrid optical link number
  *  \return Bitmask of sync'ed VFATs
  */
-uint32_t vfatSyncCheckLocal(localArgs * la, uint32_t ohN);
+uint32_t vfatSyncCheckLocal(localArgs *la, uint32_t ohN);
 
 /*!
  *  \brief Returns a list of synchronized VFAT chips
@@ -62,12 +62,12 @@ void configureVFAT3DacMonitorMultiLink(const RPCMsg *request, RPCMsg *response);
  *  \param vfatMask Bitmask of chip positions determining which chips to use
  *  \param config pointer to configuration data, if not available, use text files
  */
-void configureVFAT3sLocal(localArgs * la, uint32_t ohN, uint32_t vfatMask, uint32_t* config=nullptr);
+void configureVFAT3sLocal(localArgs *la, uint32_t ohN, uint32_t vfatMask, uint32_t* config=nullptr);
 
 /*!
  *  \brief Configures VFAT3 chips
  *
- *  VFAT configurations are sored in files under /mnt/persistent/gemdaq/vfat3/config_OHX_VFATY.txt. Has to be updated later.
+ *  VFAT configurations are stored in files under /mnt/persistent/gemdaq/vfat3/config_OHX_VFATY.txt. Has to be updated later.
  *
  *  \param request RPC request message
  *  \param response RPC responce message
@@ -99,7 +99,7 @@ void getChannelRegistersVFAT3(const RPCMsg *request, RPCMsg *response);
  *  \param useExtRefADC true (false) read the ADC1 (ADC0) which uses an external (internal) reference
  *  \param mask VFAT mask
  */
-void readVFAT3ADCLocal(localArgs * la, uint32_t * outData, uint32_t ohN, bool useExtRefADC=false, uint32_t mask=0xFF000000);
+void readVFAT3ADCLocal(localArgs *la, uint32_t * outData, uint32_t ohN, bool useExtRefADC=false, uint32_t mask=0xFF000000);
 
 /*!
  *  \brief Allows the host machine to read the ADC value from all unmasked VFATs
@@ -127,7 +127,7 @@ void readVFAT3ADCMultiLink(const RPCMsg *request, RPCMsg *response);
  *  \param chanRegData pointer to the container holding channel registers;
  *         expected to be an array of 3072 channels with idx = vfatN * 128 + chan
  */
-void setChannelRegistersVFAT3SimpleLocal(localArgs * la, uint32_t ohN, uint32_t vfatMask, uint32_t *chanRegData);
+void setChannelRegistersVFAT3SimpleLocal(localArgs *la, uint32_t ohN, uint32_t vfatMask, uint32_t *chanRegData);
 
 /*!
  *  \brief writes all vfat3 channel registers from AMC
@@ -141,7 +141,7 @@ void setChannelRegistersVFAT3SimpleLocal(localArgs * la, uint32_t ohN, uint32_t 
  *  \param trimZCC as calEnable but for zero crossing comparator trim value
  *  \param trimZCCPol as calEnable but for zero crossing comparator trim polarity
  */
-void setChannelRegistersVFAT3Local(localArgs * la, uint32_t ohN, uint32_t vfatMask, uint32_t *calEnable, uint32_t *masks, uint32_t *trimARM, uint32_t *trimARMPol, uint32_t *trimZCC, uint32_t *trimZCCPol);
+void setChannelRegistersVFAT3Local(localArgs *la, uint32_t ohN, uint32_t vfatMask, uint32_t *calEnable, uint32_t *masks, uint32_t *trimARM, uint32_t *trimARMPol, uint32_t *trimZCC, uint32_t *trimZCCPol);
 
 /*!
  *  \brief writes all vfat3 channel registers from host machine
@@ -155,7 +155,7 @@ void setChannelRegistersVFAT3(const RPCMsg *request, RPCMsg *response);
  *  \param la Local arguments structure
  *  \param ohN Optohybrid optical link number
  */
-void statusVFAT3sLocal(localArgs * la, uint32_t ohN);
+void statusVFAT3sLocal(localArgs *la, uint32_t ohN);
 
 /*!
  *  \brief Returns list of values of the most important VFAT3 register
@@ -179,7 +179,7 @@ uint16_t decodeChipID(uint32_t encChipID);
  *  \param vfatMask
  *  \param rawID simply read the register and do not apply any Reed--Muller decoding
  */
-void getVFAT3ChipIDsLocal(localArgs * la, uint32_t ohN, uint32_t* chipIDs, uint32_t vfatMask=0xFF000000, bool rawID=false);
+void getVFAT3ChipIDsLocal(localArgs *la, uint32_t ohN, uint32_t* chipIDs, uint32_t vfatMask=0xFF000000, bool rawID=false);
 void getVFAT3ChipIDs(const RPCMsg *request, RPCMsg *response);
 
 /*!
@@ -187,7 +187,7 @@ void getVFAT3ChipIDs(const RPCMsg *request, RPCMsg *response);
  *  \param request RPC request message
  *  \param response RPC responce message
  */
-uint32_t readVFAT3ConfigLocal(localArgs * la, uint8_t const& ohN, uint8_t const& vfatN, uint32_t* config=nullptr);
+uint32_t readVFAT3ConfigLocal(localArgs *la, uint8_t const& ohN, uint8_t const& vfatN, uint32_t* config=nullptr);
 void readVFAT3Config(const RPCMsg *request, RPCMsg *response);
 
 /*!
@@ -195,8 +195,8 @@ void readVFAT3Config(const RPCMsg *request, RPCMsg *response);
  *  \param request RPC request message
  *  \param response RPC responce message
  */
-/* void writeVFAT3ConfigLocal(localArgs * la, uint8_t const& ohN, uint8_t const& vfatN, vfat::config_t const& config); */
-void writeVFAT3ConfigLocal(localArgs * la, uint8_t const& ohN, uint8_t const& vfatN, uint32_t* config);
+/* void writeVFAT3ConfigLocal(localArgs *la, uint8_t const& ohN, uint8_t const& vfatN, vfat::config_t const& config); */
+void writeVFAT3ConfigLocal(localArgs *la, uint8_t ohN, uint8_t vfatN, uint32_t const *config);
 void writeVFAT3Config(const RPCMsg *request, RPCMsg *response);
 
 /*!
@@ -205,7 +205,7 @@ void writeVFAT3Config(const RPCMsg *request, RPCMsg *response);
  *  \param ohN Optohybrid optical link number (string)
  *  \param mask VFAT mask. Default: no chips will be masked
  */
-void biasAllVFATsLocal(localArgs * la, uint32_t ohN, uint32_t mask = 0xFF000000);
+void biasAllVFATsLocal(localArgs *la, uint32_t ohN, uint32_t mask = 0xFF000000);
 
 /*!
  *  \brief Local callable version of broadcastWrite
@@ -216,7 +216,7 @@ void biasAllVFATsLocal(localArgs * la, uint32_t ohN, uint32_t mask = 0xFF000000)
  *  \param mask VFAT mask. Default: no chips will be masked
  *  \return Bitmask of sync'ed VFATs
  */
-void broadcastWriteLocal(localArgs * la, uint32_t ohN, std::string regName, uint32_t value, uint32_t mask = 0xFF000000);
+void broadcastWriteLocal(localArgs *la, uint32_t ohN, std::string regName, uint32_t value, uint32_t mask = 0xFF000000);
 /*!
  *  \brief Performs broadcast write a given regiser on all the VFAT chips of a given OptoHybrid
  *  \param request RPC response message
@@ -233,7 +233,7 @@ void broadcastWrite(const RPCMsg *request, RPCMsg *response);
  *  \param mask VFAT mask. Default: no chips will be masked
  *  \return Bitmask of sync'ed VFATs
  */
-void broadcastReadLocal(localArgs * la, uint32_t *outData, uint32_t ohN, std::string regName, uint32_t mask = 0xFF000000);
+void broadcastReadLocal(localArgs *la, uint32_t *outData, uint32_t ohN, std::string regName, uint32_t mask = 0xFF000000);
 
 /*!
  *  \brief Performs broadcast read of a given regiser on all the VFAT chips of a given OptoHybrid
@@ -255,7 +255,7 @@ void configureVFATs(const RPCMsg *request, RPCMsg *response);
  *  \param ohN Optohybrid optical link number
  *  \param config_file Configuration file with trimming parameters
  */
-void loadTRIMDACLocal(localArgs * la, uint32_t ohN, std::string config_file);
+void loadTRIMDACLocal(localArgs *la, uint32_t ohN, std::string config_file);
 
 /*! FIXME OBSOLETE
  *  \brief Sets trimming DAC parameters for each channel of each chip
@@ -272,7 +272,7 @@ void loadTRIMDAC(const RPCMsg *request, RPCMsg *response);
  *  \param vt1. Default: 0x64, used if the config_file is not provided
  *  \return Bitmask of sync'ed VFATs
  */
-void loadVT1Local(localArgs * la, uint32_t ohN, std::string config_file, uint32_t vt1 = 0x64);
+void loadVT1Local(localArgs *la, uint32_t ohN, std::string config_file, uint32_t vt1 = 0x64);
 
 /*! FIXME OBSOLETE
  *  \brief Sets threshold and trim range for each VFAT2 chip
@@ -287,7 +287,7 @@ void loadVT1(const RPCMsg *request, RPCMsg *response);
  *  \param ohN Optohybrid optical link number (string)
  *  \param mask VFAT mask. Default: no chips will be masked
  */
-void setAllVFATsToRunModeLocal(localArgs * la, uint32_t ohN, uint32_t mask = 0xFF000000);
+void setAllVFATsToRunModeLocal(localArgs *la, uint32_t ohN, uint32_t mask = 0xFF000000);
 
 /*! FIXME OBSOLETE
  *  \brief Local callable. Sets VFATs to sleep mode
@@ -295,7 +295,7 @@ void setAllVFATsToRunModeLocal(localArgs * la, uint32_t ohN, uint32_t mask = 0xF
  *  \param ohN Optohybrid optical link number (string)
  *  \param mask VFAT mask. Default: no chips will be masked
  */
-void setAllVFATsToSleepModeLocal(localArgs * la, uint32_t ohN, uint32_t mask = 0xFF000000);
+void setAllVFATsToSleepModeLocal(localArgs *la, uint32_t ohN, uint32_t mask = 0xFF000000);
 
 /*!
  *  \brief Local callable version of stopCalPulse2AllChannels

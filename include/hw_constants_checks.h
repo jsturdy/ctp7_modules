@@ -14,12 +14,6 @@
   \brief This namespace holds checks for constants related to the AMC
  */
 namespace amc {
-}
-
-/*!
-  \brief This namespace holds checks for constants related to the OptoHybrid.
- */
-namespace oh {
   inline bool isValidOptoHybrid(uint8_t const ohN, uint8_t const ohMax) {
     if (ohN >= ohMax) {
       std::stringstream errmsg;
@@ -31,7 +25,12 @@ namespace oh {
     }
     return true;
   }
+}
 
+/*!
+  \brief This namespace holds checks for constants related to the OptoHybrid.
+ */
+namespace oh {
   inline bool isValidVFAT(uint8_t const vfatN) {
     if (vfatN >= oh::VFATS_PER_OH) {
       std::stringstream errmsg;
